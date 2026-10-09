@@ -1,0 +1,158 @@
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  #conn { padding: 10px; color: white; text-align: center; font-weight: bold; }
+  .ok { background: #2a7; }
+  .bad { background: #c33; }
+  .box { padding: 8px 12px; }
+  button { font-size: 28px; padding: 24px; margin: 6px; width: 45%; }
+  #undo { width: 92%; background: #fdd; }
+  input { font-size: 20px; padding: 10px; width: 90%; }
+  .err { color: #c33; }
+</style>
+
+<div id="loginBox" style="display:none; padding:16px">
+  <h2>Scorer login</h2>
+  <input id="u" placeholder="username" autocapitalize="none"><br><br>
+  <input id="p" type="password" placeholder="password"><br><br>
+  <button onclick="login()" style="width:auto; font-size:20px; padding:12px 24px">Log in</button>
+  <p id="loginErr" class="err"></p>
+</div>
+
+<div id="app" style="display:none">
+  <div id="conn" class="bad">Connecting...</div>
+  <div class="box">
+    <small id="who"></small>
+    <button onclick="logout()" style="width:auto; font-size:14px; padding:4px 10px">Log out</button><br>
+    <select id="match"></select>
+
+    <h2 id="name"></h2>
+    <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+    <h2><span id="pA">0</span> - <span id="pB">0</span></h2>
+    <p id="status"></p>
+    <p id="pending"></p>
+    <p id="err" class="err"></p>
+  </div>
+
+  <button onclick="act('point','A')">+1 Team A</button>
+  <button onclick="act('point','B')">+1 Team B</button>
+  <button id="undo" onclick="act('undo')">UNDO last point</button>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const sel = $("match");
+
+  const QKEY = "scorer-queue", SKEY = "scorer-session";
+  let queue = JSON.parse(localStorage.getItem(QKEY) || "[]");
+  let session = JSON.parse(localStorage.getItem(SKEY) || "null");
+  let socket = null;
+  let sending = false;
+
+  // ---------- login / logout ----------
+  async function login() {
+    $("loginErr").textContent = "";
+    try {
+      const r = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: $("u").value.trim(), password: $("p").value }),
+      });
+      const data = await r.json();
+      if (!r.ok) { $("loginErr").textContent = data.error || "login failed"; return; }
+      session = data;
+      localStorage.setItem(SKEY, JSON.stringify(session));
+      $("p").value = "";
+      start();
+    } catch (e) {
+      $("loginErr").textContent = "Cannot reach the server";
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem(SKEY);
+    session = null;
+    if (socket) { socket.disconnect(); socket = null; }
+    $("app").style.display = "none";
+    $("loginBox").style.display = "block";
+  }
+
+  // ---------- queue (same idea as Lesson 4) ----------
+  function save() { localStorage.setItem(QKEY, JSON.stringify(queue)); render(); }
+  function newId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
+
+  function act(type, team) {
+    if (!sel.value) return;
+    queue.push({ id: newId(), matchId: sel.value, type, team });
+    save();
+    flush();
+  }
+
+  function flush() {
+    if (sending || queue.length === 0 || !socket || !socket.connected) return;
+    sending = true;
+    const item = queue[0];
+
+    socket.timeout(5000).emit("score:action", item, (err, res) => {
+      sending = false;
+               if (err || res.retry) { setTimeout(flush, 2000); return; }   // no answer, or a temporary server problem: retry late // no answer: retry later
+      $("err").textContent = res.ok ? "" : "Rejected: " + res.error;
+      queue.shift();
+      save();
+      flush();
+    });
+  }
+
+  // ---------- connection + display ----------
+  function render() {
+    const online = socket && socket.connected;
+    $("conn").className = online ? "ok" : "bad";
+    $("conn").textContent = online ? "Connected" : "OFFLINE - entries are saved on this phone";
+    $("pending").textContent = queue.length
+      ? queue.length + " entries waiting to be sent"
+      : "All entries sent";
+  }
+
+  function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
+
+  function start() {
+    $("loginBox").style.display = "none";
+    $("app").style.display = "block";
+    $("who").textContent = session.username + " (" + session.role + ")";
+
+    sel.innerHTML = "";
+    for (const m of session.matches) {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = m.name;
+      sel.appendChild(o);
+    }
+
+    if (socket) socket.disconnect();
+    socket = io({ auth: { token: session.token } });
+
+    socket.on("connect", () => { join(); render(); flush(); });
+    socket.on("disconnect", render);
+    socket.on("connect_error", (err) => {
+      if (err.message === "invalid token") {            // expired or fake token
+        logout();
+        $("loginErr").textContent = "Session expired. Please log in again.";
+      }
+      render();
+    });
+    socket.on("score:update", (s) => {
+      if (s.matchId !== sel.value) return;
+      $("name").textContent = s.name;
+      $("gA").textContent = s.gamesA;
+      $("gB").textContent = s.gamesB;
+      $("pA").textContent = s.pointsA;
+      $("pB").textContent = s.pointsB;
+      $("status").textContent = s.winner ? "FINISHED. Winner: Team " + s.winner : "LIVE";
+    });
+    render();
+  }
+
+  sel.onchange = join;
+  if (session) start(); else $("loginBox").style.display = "block";
+</script>
