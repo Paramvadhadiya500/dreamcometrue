@@ -1,12 +1,16 @@
 const express = require("express");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
+const { createClient } = require("redis");
+const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const pool = require("./db");
 const { computeTableTennis, effectivePoints } = require("./engine");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
+const PORT = process.env.PORT || 3000;
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
 
 const app = express();
@@ -15,8 +19,27 @@ app.use(express.static("public"));
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-// ---------- state: database is the truth, this Map is only a cache ----------
-const stateCache = new Map();
+// ---------- Redis: one client for the score cache, two for the Socket.IO adapter ----------
+const cache = createClient({ url: REDIS_URL, disableOfflineQueue: true }); // fail fast if Redis is down
+const pubClient = createClient({ url: REDIS_URL });
+const subClient = pubClient.duplicate();
+for (const c of [cache, pubClient, subClient]) {
+  c.on("error", (e) => console.error("redis error:", e.message));
+}
+
+// ---------- score cache (shared by all servers) ----------
+const CACHE_TTL = 60; // seconds: if Redis misses a write during an outage, a stale score lives at most this long
+
+// Only store a state if it is newer than what is already there.
+const SET_IF_NEWER = `
+local cur = redis.call('GET', KEYS[1])
+if cur then
+  local v = cjson.decode(cur).version
+  if v > tonumber(ARGV[2]) then return 0 end
+end
+redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
+return 1
+`;
 
 function buildState(match, events) {
   const s = computeTableTennis(effectivePoints(events), match.best_of);
@@ -24,28 +47,46 @@ function buildState(match, events) {
   return { matchId: match.id, name: match.name, ...s, version: last };
 }
 
-async function loadState(matchId) {
+async function loadStateFromDb(matchId) {
   const m = await pool.query("SELECT id, name, best_of FROM matches WHERE id = $1", [matchId]);
   if (m.rowCount === 0) return null;
   const ev = await pool.query("SELECT seq, type, team FROM events WHERE match_id = $1 ORDER BY seq", [matchId]);
   return buildState(m.rows[0], ev.rows);
 }
 
-function cacheState(state) {
-  const old = stateCache.get(state.matchId);
-  if (!old || state.version >= old.version) stateCache.set(state.matchId, state);
+async function cacheState(state) {
+  try {
+    await cache.eval(SET_IF_NEWER, {
+      keys: ["state:" + state.matchId],
+      arguments: [JSON.stringify(state), String(state.version), String(CACHE_TTL)],
+    });
+  } catch (e) {
+    console.error("cache write failed:", e.message);   // not fatal: the DB still has everything
+  }
 }
 
+const inflight = new Map();   // matchId -> promise of a DB load already running
+
 async function getState(matchId) {
-  if (stateCache.has(matchId)) return stateCache.get(matchId);
-  const s = await loadState(matchId);
-  if (s) cacheState(s);
-  return s;
+  try {
+    const hit = await cache.get("state:" + matchId);
+    if (hit) return JSON.parse(hit);
+  } catch (e) {
+    console.error("cache read failed:", e.message);   // Redis down: fall back to the DB
+  }
+
+  // 3000 students arriving at once must cause ONE database load, not 3000
+  if (inflight.has(matchId)) return inflight.get(matchId);
+  const p = loadStateFromDb(matchId)
+    .then(async (s) => { if (s) await cacheState(s); return s; })
+    .finally(() => inflight.delete(matchId));
+  inflight.set(matchId, p);
+  return p;
 }
 
 // ---------- permissions (asked from the database every time) ----------
 async function canScore(user, matchId) {
-  if (!user.username) return false;                      // anonymous student
+  if (!user.username) return false;
   const r = await pool.query(
     `SELECT u.role, u.active,
             EXISTS (SELECT 1 FROM match_scorers ms
@@ -55,7 +96,7 @@ async function canScore(user, matchId) {
   );
   if (r.rowCount === 0) return false;
   const u = r.rows[0];
-  if (!u.active) return false;                           // disabled account
+  if (!u.active) return false;
   return u.role === "admin" || (u.role === "scorer" && u.assigned);
 }
 
@@ -68,9 +109,6 @@ async function applyAction({ id, matchId, type, team }, username) {
   };
   try {
     await client.query("BEGIN");
-
-    // Lock this match's row. Other actions for the SAME match wait here;
-    // actions for other matches are not blocked.
     const m = await client.query(
       "SELECT id, name, best_of FROM matches WHERE id = $1 FOR UPDATE", [matchId]
     );
@@ -101,7 +139,6 @@ async function applyAction({ id, matchId, type, team }, username) {
       "INSERT INTO events (id, match_id, type, team, by_user) VALUES ($1, $2, $3, $4, $5) RETURNING seq",
       [id, matchId, type, savedTeam, username]
     );
-
     ev.rows.push({ seq: ins.rows[0].seq, type, team: savedTeam });
     state = buildState(m.rows[0], ev.rows);
 
@@ -109,8 +146,8 @@ async function applyAction({ id, matchId, type, team }, username) {
     return { ok: true, state };
   } catch (e) {
     console.error("applyAction failed:", e);
-    try { await client.query("ROLLBACK"); } catch (_) { }
-    return { ok: false, error: "server error", retry: true };   // temporary: phone should retry
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    return { ok: false, error: "server error", retry: true };
   } finally {
     client.release();
   }
@@ -123,25 +160,20 @@ app.post("/login", async (req, res) => {
     if (typeof username !== "string" || typeof password !== "string") {
       return res.status(401).json({ error: "wrong username or password" });
     }
-
     const r = await pool.query(
       "SELECT username, password_hash, role, active FROM users WHERE username = $1", [username]
     );
     const u = r.rows[0];
-
-    // always run one bcrypt compare, so unknown usernames take the same time
     const ok = await bcrypt.compare(password, u ? u.password_hash : DUMMY_HASH);
     if (!u || !u.active || !ok) {
       return res.status(401).json({ error: "wrong username or password" });
     }
-
     const list = u.role === "admin"
       ? await pool.query("SELECT id, name FROM matches ORDER BY id")
       : await pool.query(
-        `SELECT m.id, m.name FROM matches m
+          `SELECT m.id, m.name FROM matches m
            JOIN match_scorers ms ON ms.match_id = m.id
            WHERE ms.username = $1 ORDER BY m.id`, [u.username]);
-
     const token = jwt.sign({ username: u.username }, JWT_SECRET, { expiresIn: "12h" });
     res.json({ token, username: u.username, role: u.role, matches: list.rows });
   } catch (e) {
@@ -150,6 +182,9 @@ app.post("/login", async (req, res) => {
   }
 });
 
+// ---------- simple health check (useful later for the load balancer) ----------
+app.get("/health", (req, res) => res.json({ ok: true, port: PORT }));
+
 // ---------- socket authentication ----------
 io.use(async (socket, next) => {
   const token = socket.handshake.auth && socket.handshake.auth.token;
@@ -157,14 +192,12 @@ io.use(async (socket, next) => {
     socket.data.user = { role: "student" };
     return next();
   }
-
   let payload;
   try {
     payload = jwt.verify(token, JWT_SECRET);
   } catch (e) {
-    return next(new Error("invalid token"));             // bad or expired token
+    return next(new Error("invalid token"));
   }
-
   try {
     const r = await pool.query("SELECT role, active FROM users WHERE username = $1", [payload.username]);
     if (r.rowCount === 0 || !r.rows[0].active) return next(new Error("invalid token"));
@@ -172,7 +205,7 @@ io.use(async (socket, next) => {
     next();
   } catch (e) {
     console.error(e);
-    next(new Error("server error"));                     // database problem, NOT a bad token
+    next(new Error("server error"));
   }
 });
 
@@ -184,7 +217,7 @@ io.on("connection", (socket) => {
       for (const room of [...socket.rooms]) {
         if (room !== socket.id) socket.leave(room);
       }
-      socket.join(matchId);                 // join FIRST so no update is missed
+      socket.join(matchId);
       const state = await getState(matchId);
       if (!state) { socket.leave(matchId); return; }
       socket.emit("score:update", state);
@@ -198,10 +231,9 @@ io.on("connection", (socket) => {
     try {
       const { id, matchId, type, team } = msg || {};
       if (typeof id !== "string" || id.length === 0 || id.length > 64 ||
-        typeof matchId !== "string" || typeof type !== "string") {
+          typeof matchId !== "string" || typeof type !== "string") {
         return ack({ ok: false, error: "bad request" });
       }
-
       if (!(await canScore(socket.data.user, matchId))) {
         console.log("blocked:", socket.data.user, "->", matchId);
         return ack({ ok: false, error: "not allowed" });
@@ -210,7 +242,8 @@ io.on("connection", (socket) => {
       const result = await applyAction({ id, matchId, type, team }, socket.data.user.username);
 
       if (result.ok) {
-        cacheState(result.state);
+        await cacheState(result.state);
+        // with the Redis adapter this reaches students on EVERY server
         if (!result.duplicate) io.to(matchId).emit("score:update", result.state);
       }
       ack(result);
@@ -221,4 +254,10 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(3000, () => console.log("http://localhost:3000"));
+// ---------- start ----------
+async function main() {
+  await Promise.all([cache.connect(), pubClient.connect(), subClient.connect()]);
+  io.adapter(createAdapter(pubClient, subClient));
+  httpServer.listen(PORT, () => console.log("http://localhost:" + PORT));
+}
+main().catch((e) => { console.error("startup failed:", e.message); process.exit(1); });
