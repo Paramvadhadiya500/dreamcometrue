@@ -2,7 +2,7 @@
 // Applies every .sql file in ./migrations (in name order) that has not been applied yet.
 const fs = require("fs");
 const path = require("path");
-const pool = require("../db");
+const pool = require("./db");
 async function main() {
     await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (
     name       TEXT PRIMARY KEY,
