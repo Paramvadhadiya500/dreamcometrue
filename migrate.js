@@ -10,7 +10,8 @@ async function main() {
   )`);
 
     const done = new Set((await pool.query("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
-    const dir = __dirname;
+
+    const dir = path.join(__dirname, "migrations");
     const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
 
     for (const f of files) {
