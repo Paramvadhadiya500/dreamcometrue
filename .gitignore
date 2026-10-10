@@ -3,4 +3,5 @@
    *.pem
    *.log
    backups/
+   *.sql.gz
    
