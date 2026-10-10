@@ -1,5 +1,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+    body {
+        font-family: sans-serif;
+        margin: 0;
+        padding: 0 12px 24px;
+    }
+
     #conn {
         display: none;
         background: #c33;
@@ -7,20 +13,32 @@
         padding: 10px;
         text-align: center;
         font-weight: bold;
+        margin: 0 -12px 8px;
+    }
+
+    select {
+        font-size: 18px;
+        padding: 6px;
+        margin-top: 8px;
     }
 </style>
 
 <div id="conn">Reconnecting... the score below may be out of date</div>
 
-<select id="match">
-    <option value="tt-1">Table Tennis 1</option>
-    <option value="tt-2">Table Tennis 2</option>
-</select>
+<select id="match"></select>
 
 <h2 id="name"></h2>
-<h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
-<h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
-<p id="history"></p>
+
+<div id="tt" style="display:none">
+    <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+    <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
+    <p id="history"></p>
+</div>
+
+<div id="simple" style="display:none">
+    <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+</div>
+
 <p id="status"></p>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -28,25 +46,62 @@
     const socket = io();
     const sel = document.getElementById("match");
     const $ = (id) => document.getElementById(id);
-    const latest = {};
+    const latest = {};                       // newest version seen for each match
 
-    function join() { socket.emit("join-match", sel.value); }
-    sel.onchange = join;
+    function join() {
+        if (!sel.value) return;
+        socket.emit("join-match", sel.value);
+    }
+
+    sel.onchange = () => { $("name").textContent = "Loading..."; join(); };
 
     socket.on("connect", () => { $("conn").style.display = "none"; join(); });
     socket.on("disconnect", () => { $("conn").style.display = "block"; });
 
     socket.on("score:update", (s) => {
         if (s.matchId !== sel.value) return;
-        if (s.version < (latest[s.matchId] || 0)) return;
+        if (s.version < (latest[s.matchId] || 0)) return;   // old news, ignore
         latest[s.matchId] = s.version;
 
         $("name").textContent = s.name;
-        $("gA").textContent = s.gamesA;
-        $("gB").textContent = s.gamesB;
-        $("pA").textContent = s.pointsA;
-        $("pB").textContent = s.pointsB;
-        $("history").textContent = s.finishedGames.map(g => g.join("-")).join(", ");
-        $("status").textContent = s.winner ? "Winner: Team " + s.winner : "LIVE";
+        const isTT = s.sport === "table_tennis";
+        $("tt").style.display = isTT ? "block" : "none";
+        $("simple").style.display = isTT ? "none" : "block";
+
+        if (isTT) {
+            $("gA").textContent = s.gamesA;
+            $("gB").textContent = s.gamesB;
+            $("pA").textContent = s.pointsA;
+            $("pB").textContent = s.pointsB;
+            $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
+        } else {
+            $("sA").textContent = s.scoreA;
+            $("sB").textContent = s.scoreB;
+        }
+
+        $("status").textContent = s.status === "finished"
+            ? (s.winner === "draw" ? "Finished: draw" : "Finished. Winner: Team " + s.winner)
+            : "LIVE";
     });
+
+    // build the match list from the server, so new matches appear without editing this file
+    async function loadMatches() {
+        try {
+            const r = await fetch("/api/matches");
+            const list = await r.json();
+            const keep = sel.value;
+            sel.innerHTML = "";
+            for (const m of list) {
+                const o = document.createElement("option");
+                o.value = m.id;
+                o.textContent = m.name;
+                sel.appendChild(o);
+            }
+            if (keep && list.some((m) => m.id === keep)) sel.value = keep;
+            join();
+        } catch (e) {
+            $("status").textContent = "Cannot load the match list";
+        }
+    }
+    loadMatches();
 </script>

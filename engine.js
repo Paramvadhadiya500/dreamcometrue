@@ -1,4 +1,4 @@
-
+// ---- Table tennis rules (unchanged from Lesson 3) ----
 function computeTableTennis(events, bestOf = 3) {
     const gamesToWin = Math.ceil(bestOf / 2);
     let pointsA = 0, pointsB = 0;
@@ -7,7 +7,7 @@ function computeTableTennis(events, bestOf = 3) {
     let winner = null;
 
     for (const e of events) {
-        if (winner) break;
+        if (winner) break;                       // match is over, ignore extra events
         if (e.type !== "point") continue;
 
         if (e.team === "A") pointsA++;
@@ -17,14 +17,11 @@ function computeTableTennis(events, bestOf = 3) {
         const top = Math.max(pointsA, pointsB);
         const lead = Math.abs(pointsA - pointsB);
 
-        if (top >= 11 && lead >= 2) {
-            if (pointsA > pointsB) gamesA++;
-            else gamesB++;
-
+        if (top >= 11 && lead >= 2) {            // game finished
+            if (pointsA > pointsB) gamesA++; else gamesB++;
             finishedGames.push([pointsA, pointsB]);
             pointsA = 0;
             pointsB = 0;
-
             if (gamesA === gamesToWin) winner = "A";
             if (gamesB === gamesToWin) winner = "B";
         }
@@ -37,18 +34,14 @@ function computeTableTennis(events, bestOf = 3) {
     };
 }
 
-// Replays the log: each undo cancels the most recent point still counted.
+// ---- Undo handling (now works for ANY kind of event) ----
+// Replays the log: every undo cancels the most recent event still counted.
 function effectivePoints(events) {
     const stack = [];
-
     for (const e of events) {
-        if (e.type === "point") {
-            stack.push(e);
-        } else if (e.type === "undo") {
-            stack.pop();
-        }
+        if (e.type === "undo") stack.pop();
+        else stack.push(e);
     }
-
     return stack;
 }
 

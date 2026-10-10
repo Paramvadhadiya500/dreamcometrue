@@ -6,7 +6,8 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const pool = require("./db");
-const { computeTableTennis, effectivePoints } = require("./engine");
+const { effectivePoints } = require("./engine");
+const { getEngine } = require("./engines");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
 const PORT = process.env.PORT || 3000;
@@ -42,15 +43,17 @@ return 1
 `;
 
 function buildState(match, events) {
-  const s = computeTableTennis(effectivePoints(events), match.best_of);
+  const engine = getEngine(match.sport);
+  if (!engine) throw new Error("unknown sport: " + match.sport);
+  const s = engine.compute(effectivePoints(events), match);
   const last = events.length ? Number(events[events.length - 1].seq) : 0;
-  return { matchId: match.id, name: match.name, ...s, version: last };
+  return { matchId: match.id, name: match.name, sport: match.sport, ...s, version: last };
 }
 
 async function loadStateFromDb(matchId) {
-  const m = await pool.query("SELECT id, name, best_of FROM matches WHERE id = $1", [matchId]);
+  const m = await pool.query("SELECT id, name, best_of, sport FROM matches WHERE id = $1", [matchId]);
   if (m.rowCount === 0) return null;
-  const ev = await pool.query("SELECT seq, type, team FROM events WHERE match_id = $1 ORDER BY seq", [matchId]);
+  const ev = await pool.query("SELECT seq, type, team, value FROM events WHERE match_id = $1 ORDER BY seq", [matchId]);
   return buildState(m.rows[0], ev.rows);
 }
 
@@ -101,7 +104,7 @@ async function canScore(user, matchId) {
 }
 
 // ---------- one scorer action = one transaction ----------
-async function applyAction({ id, matchId, type, team }, username) {
+async function applyAction({ id, matchId, type, team, value }, username) {
   const client = await pool.connect();
   const fail = async (error) => {
     await client.query("ROLLBACK");
@@ -110,12 +113,14 @@ async function applyAction({ id, matchId, type, team }, username) {
   try {
     await client.query("BEGIN");
     const m = await client.query(
-      "SELECT id, name, best_of FROM matches WHERE id = $1 FOR UPDATE", [matchId]
+      "SELECT id, name, best_of, sport FROM matches WHERE id = $1 FOR UPDATE", [matchId]
     );
     if (m.rowCount === 0) return await fail("unknown match");
+    const engine = getEngine(m.rows[0].sport);
+    if (!engine) return await fail("unknown sport");
 
     const ev = await client.query(
-      "SELECT seq, type, team FROM events WHERE match_id = $1 ORDER BY seq", [matchId]
+      "SELECT seq, type, team, value FROM events WHERE match_id = $1 ORDER BY seq", [matchId]
     );
     let state = buildState(m.rows[0], ev.rows);
 
@@ -125,28 +130,27 @@ async function applyAction({ id, matchId, type, team }, username) {
       return { ok: true, duplicate: true, state };
     }
 
-    if (type === "point") {
-      if (team !== "A" && team !== "B") return await fail("bad team");
-      if (state.winner) return await fail("match already finished");
-    } else if (type === "undo") {
+    if (type === "undo") {
       if (effectivePoints(ev.rows).length === 0) return await fail("nothing to undo");
     } else {
-      return await fail("unknown action");
+      const problem = engine.validate({ type, team, value }, state);   // the sport's own rules
+      if (problem) return await fail(problem);
     }
 
     const savedTeam = type === "point" ? team : null;
+    const savedValue = type === "point" && Number.isInteger(value) ? value : null;
     const ins = await client.query(
-      "INSERT INTO events (id, match_id, type, team, by_user) VALUES ($1, $2, $3, $4, $5) RETURNING seq",
-      [id, matchId, type, savedTeam, username]
+      "INSERT INTO events (id, match_id, type, team, value, by_user) VALUES ($1, $2, $3, $4, $5, $6) RETURNING seq",
+      [id, matchId, type, savedTeam, savedValue, username]
     );
-    ev.rows.push({ seq: ins.rows[0].seq, type, team: savedTeam });
+    ev.rows.push({ seq: ins.rows[0].seq, type, team: savedTeam, value: savedValue });
     state = buildState(m.rows[0], ev.rows);
 
     await client.query("COMMIT");
     return { ok: true, state };
   } catch (e) {
     console.error("applyAction failed:", e);
-    try { await client.query("ROLLBACK"); } catch (_) {}
+    try { await client.query("ROLLBACK"); } catch (_) { }
     return { ok: false, error: "server error", retry: true };
   } finally {
     client.release();
@@ -169,13 +173,28 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ error: "wrong username or password" });
     }
     const list = u.role === "admin"
-      ? await pool.query("SELECT id, name FROM matches ORDER BY id")
+      ? await pool.query("SELECT id, name, sport FROM matches ORDER BY id")
       : await pool.query(
-          `SELECT m.id, m.name FROM matches m
+        `SELECT m.id, m.name, m.sport FROM matches m
            JOIN match_scorers ms ON ms.match_id = m.id
            WHERE ms.username = $1 ORDER BY m.id`, [u.username]);
     const token = jwt.sign({ username: u.username }, JWT_SECRET, { expiresIn: "12h" });
     res.json({ token, username: u.username, role: u.role, matches: list.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// ---------- list of matches for the student page (cached for 10 seconds) ----------
+let matchListCache = { at: 0, rows: [] };
+app.get("/api/matches", async (req, res) => {
+  try {
+    if (Date.now() - matchListCache.at > 10000) {
+      const r = await pool.query("SELECT id, name, sport FROM matches ORDER BY id");
+      matchListCache = { at: Date.now(), rows: r.rows };
+    }
+    res.json(matchListCache.rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server error" });
@@ -229,9 +248,9 @@ io.on("connection", (socket) => {
   socket.on("score:action", async (msg, ack) => {
     if (typeof ack !== "function") return;
     try {
-      const { id, matchId, type, team } = msg || {};
+      const { id, matchId, type, team, value } = msg || {};
       if (typeof id !== "string" || id.length === 0 || id.length > 64 ||
-          typeof matchId !== "string" || typeof type !== "string") {
+        typeof matchId !== "string" || typeof type !== "string") {
         return ack({ ok: false, error: "bad request" });
       }
       if (!(await canScore(socket.data.user, matchId))) {
@@ -239,7 +258,7 @@ io.on("connection", (socket) => {
         return ack({ ok: false, error: "not allowed" });
       }
 
-      const result = await applyAction({ id, matchId, type, team }, socket.data.user.username);
+      const result = await applyAction({ id, matchId, type, team, value }, socket.data.user.username);
 
       if (result.ok) {
         await cacheState(result.state);

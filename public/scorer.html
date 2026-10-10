@@ -5,8 +5,11 @@
   .ok { background: #2a7; }
   .bad { background: #c33; }
   .box { padding: 8px 12px; }
-  button { font-size: 28px; padding: 24px; margin: 6px; width: 45%; }
+  button { font-size: 26px; padding: 20px; margin: 6px; }
+  .big { width: 45%; }
+  .grid button { width: 28%; font-size: 24px; padding: 18px 4px; margin: 4px 1%; }
   #undo { width: 92%; background: #fdd; }
+  #finish { width: 92%; background: #def; }
   input { font-size: 20px; padding: 10px; width: 90%; }
   .err { color: #c33; }
 </style>
@@ -27,16 +30,38 @@
     <select id="match"></select>
 
     <h2 id="name"></h2>
-    <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
-    <h2><span id="pA">0</span> - <span id="pB">0</span></h2>
+
+    <div id="ttView" style="display:none">
+      <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+      <h2><span id="pA">0</span> - <span id="pB">0</span></h2>
+    </div>
+    <div id="simpleView" style="display:none">
+      <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+    </div>
+
     <p id="status"></p>
     <p id="pending"></p>
     <p id="err" class="err"></p>
   </div>
 
-  <button onclick="act('point','A')">+1 Team A</button>
-  <button onclick="act('point','B')">+1 Team B</button>
-  <button id="undo" onclick="act('undo')">UNDO last point</button>
+  <div id="ttControls" style="display:none">
+    <button class="big" onclick="act('point','A',1)">+1 Team A</button>
+    <button class="big" onclick="act('point','B',1)">+1 Team B</button>
+  </div>
+
+  <div id="simpleControls" class="grid" style="display:none">
+    <div>
+      <button onclick="act('point','A',1)">A +1</button><button onclick="act('point','A',2)">A +2</button><button onclick="act('point','A',3)">A +3</button>
+    </div>
+    <div>
+      <button onclick="act('point','B',1)">B +1</button><button onclick="act('point','B',2)">B +2</button><button onclick="act('point','B',3)">B +3</button>
+    </div>
+    <button id="finish" onclick="finishMatch()">FINISH MATCH</button>
+  </div>
+
+  <div id="undoRow" style="display:none">
+    <button id="undo" onclick="act('undo')">UNDO last action</button>
+  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -49,6 +74,7 @@
   let session = JSON.parse(localStorage.getItem(SKEY) || "null");
   let socket = null;
   let sending = false;
+  const latest = {};
 
   // ---------- login / logout ----------
   async function login() {
@@ -82,11 +108,15 @@
   function save() { localStorage.setItem(QKEY, JSON.stringify(queue)); render(); }
   function newId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
 
-  function act(type, team) {
+  function act(type, team, value) {
     if (!sel.value) return;
-    queue.push({ id: newId(), matchId: sel.value, type, team });
+    queue.push({ id: newId(), matchId: sel.value, type, team, value });
     save();
     flush();
+  }
+
+  function finishMatch() {
+    if (confirm("Finish this match? You can still press UNDO afterwards.")) act("finish");
   }
 
   function flush() {
@@ -96,7 +126,7 @@
 
     socket.timeout(5000).emit("score:action", item, (err, res) => {
       sending = false;
-               if (err || res.retry) { setTimeout(flush, 2000); return; }   // no answer, or a temporary server problem: retry late // no answer: retry later
+      if (err || res.retry) { setTimeout(flush, 2000); return; }   // no answer, or a temporary server problem: retry later
       $("err").textContent = res.ok ? "" : "Rejected: " + res.error;
       queue.shift();
       save();
@@ -115,6 +145,29 @@
   }
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
+
+  function showState(s) {
+    $("name").textContent = s.name;
+    const isTT = s.sport === "table_tennis";
+    $("ttView").style.display = isTT ? "block" : "none";
+    $("simpleView").style.display = isTT ? "none" : "block";
+    $("ttControls").style.display = isTT ? "block" : "none";
+    $("simpleControls").style.display = isTT ? "none" : "block";
+    $("undoRow").style.display = "block";
+
+    if (isTT) {
+      $("gA").textContent = s.gamesA;
+      $("gB").textContent = s.gamesB;
+      $("pA").textContent = s.pointsA;
+      $("pB").textContent = s.pointsB;
+    } else {
+      $("sA").textContent = s.scoreA;
+      $("sB").textContent = s.scoreB;
+    }
+    $("status").textContent = s.status === "finished"
+      ? "FINISHED. " + (s.winner === "draw" ? "Draw" : "Winner: Team " + s.winner)
+      : "LIVE";
+  }
 
   function start() {
     $("loginBox").style.display = "none";
@@ -143,16 +196,19 @@
     });
     socket.on("score:update", (s) => {
       if (s.matchId !== sel.value) return;
-      $("name").textContent = s.name;
-      $("gA").textContent = s.gamesA;
-      $("gB").textContent = s.gamesB;
-      $("pA").textContent = s.pointsA;
-      $("pB").textContent = s.pointsB;
-      $("status").textContent = s.winner ? "FINISHED. Winner: Team " + s.winner : "LIVE";
+      if (s.version < (latest[s.matchId] || 0)) return;
+      latest[s.matchId] = s.version;
+      showState(s);
     });
     render();
   }
 
-  sel.onchange = join;
+  sel.onchange = () => {
+    $("ttView").style.display = $("simpleView").style.display = "none";
+    $("ttControls").style.display = $("simpleControls").style.display = $("undoRow").style.display = "none";
+    $("name").textContent = "Loading...";
+    join();
+  };
+
   if (session) start(); else $("loginBox").style.display = "block";
 </script>
