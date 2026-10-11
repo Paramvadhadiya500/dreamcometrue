@@ -1,26 +1,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-    body {
-        font-family: sans-serif;
-        margin: 0;
-        padding: 0 12px 24px;
-    }
-
-    #conn {
-        display: none;
-        background: #c33;
-        color: white;
-        padding: 10px;
-        text-align: center;
-        font-weight: bold;
-        margin: 0 -12px 8px;
-    }
-
-    select {
-        font-size: 18px;
-        padding: 6px;
-        margin-top: 8px;
-    }
+  body { font-family: sans-serif; margin: 0; padding: 0 12px 24px; }
+  #conn { display: none; background: #c33; color: white; padding: 10px; text-align: center; font-weight: bold; margin: 0 -12px 8px; }
+  select { font-size: 18px; padding: 6px; margin-top: 8px; max-width: 100%; }
+  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; }
+  .free { display: inline-block; background: #fc0; padding: 4px 10px; font-weight: bold; border-radius: 4px; }
+  .small { color: #555; }
 </style>
 
 <div id="conn">Reconnecting... the score below may be out of date</div>
@@ -30,78 +15,121 @@
 <h2 id="name"></h2>
 
 <div id="tt" style="display:none">
-    <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
-    <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
-    <p id="history"></p>
+  <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+  <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
+  <p id="history"></p>
 </div>
 
 <div id="simple" style="display:none">
-    <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+  <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+</div>
+
+<div id="cricket" style="display:none">
+  <h1 id="crBig"></h1>
+  <h3 id="crOvers"></h3>
+  <p id="crChase"></p>
+  <p id="crFirst"></p>
+  <p id="crOver" class="over"></p>
+  <p id="crFree" class="free" style="display:none">FREE HIT</p>
+  <p id="crExtras" class="small"></p>
 </div>
 
 <p id="status"></p>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-    const socket = io();
-    const sel = document.getElementById("match");
-    const $ = (id) => document.getElementById(id);
-    const latest = {};                       // newest version seen for each match
+  const socket = io();
+  const sel = document.getElementById("match");
+  const $ = (id) => document.getElementById(id);
+  const latest = {};                       // newest version seen for each match
 
-    function join() {
-        if (!sel.value) return;
-        socket.emit("join-match", sel.value);
+  function join() {
+    if (!sel.value) return;
+    socket.emit("join-match", sel.value);
+  }
+
+  sel.onchange = () => { $("name").textContent = "Loading..."; join(); };
+
+  socket.on("connect", () => { $("conn").style.display = "none"; join(); });
+  socket.on("disconnect", () => { $("conn").style.display = "block"; });
+
+  function statusText(s) {
+    if (s.status !== "finished") return "LIVE";
+    if (s.resultText) return "FINISHED. " + s.resultText;
+    if (s.winner === "draw") return "Finished: draw";
+    return "Finished. Winner: Team " + s.winner;
+  }
+
+  function showCricket(s) {
+    const ci = s.innings[s.inning - 1];
+    const first = s.innings[0];
+    $("crBig").textContent = "Team " + ci.battingTeam + " " + ci.runs + "/" + ci.wickets;
+    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
+
+    let chase = "";
+    if (s.inning === 2 && s.status !== "finished") {
+      chase = "Target " + s.target + ". Need " + s.need + " from " + s.ballsLeft + " balls";
+      if (s.requiredRate !== null) chase += " (required rate " + s.requiredRate.toFixed(2) + ")";
+    }
+    $("crChase").textContent = chase;
+
+    $("crFirst").textContent = s.inning === 2
+      ? "Team " + first.battingTeam + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
+      : "";
+
+    $("crOver").textContent = ci.recent.join("  ");
+    $("crFree").style.display = s.freeHit ? "inline-block" : "none";
+    $("crExtras").textContent = "Extras: " + ci.extras.total +
+      " (wides " + ci.extras.wides + ", no balls " + ci.extras.noBalls +
+      ", byes " + ci.extras.byes + ", leg byes " + ci.extras.legByes + ")";
+  }
+
+  socket.on("score:update", (s) => {
+    if (s.matchId !== sel.value) return;
+    if (s.version < (latest[s.matchId] || 0)) return;   // old news, ignore
+    latest[s.matchId] = s.version;
+
+    $("name").textContent = s.name;
+    const isTT = s.sport === "table_tennis";
+    const isCR = s.sport === "cricket";
+    $("tt").style.display = isTT ? "block" : "none";
+    $("cricket").style.display = isCR ? "block" : "none";
+    $("simple").style.display = (!isTT && !isCR) ? "block" : "none";
+
+    if (isTT) {
+      $("gA").textContent = s.gamesA;
+      $("gB").textContent = s.gamesB;
+      $("pA").textContent = s.pointsA;
+      $("pB").textContent = s.pointsB;
+      $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
+    } else if (isCR) {
+      showCricket(s);
+    } else {
+      $("sA").textContent = s.scoreA;
+      $("sB").textContent = s.scoreB;
     }
 
-    sel.onchange = () => { $("name").textContent = "Loading..."; join(); };
+    $("status").textContent = statusText(s);
+  });
 
-    socket.on("connect", () => { $("conn").style.display = "none"; join(); });
-    socket.on("disconnect", () => { $("conn").style.display = "block"; });
-
-    socket.on("score:update", (s) => {
-        if (s.matchId !== sel.value) return;
-        if (s.version < (latest[s.matchId] || 0)) return;   // old news, ignore
-        latest[s.matchId] = s.version;
-
-        $("name").textContent = s.name;
-        const isTT = s.sport === "table_tennis";
-        $("tt").style.display = isTT ? "block" : "none";
-        $("simple").style.display = isTT ? "none" : "block";
-
-        if (isTT) {
-            $("gA").textContent = s.gamesA;
-            $("gB").textContent = s.gamesB;
-            $("pA").textContent = s.pointsA;
-            $("pB").textContent = s.pointsB;
-            $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
-        } else {
-            $("sA").textContent = s.scoreA;
-            $("sB").textContent = s.scoreB;
-        }
-
-        $("status").textContent = s.status === "finished"
-            ? (s.winner === "draw" ? "Finished: draw" : "Finished. Winner: Team " + s.winner)
-            : "LIVE";
-    });
-
-    // build the match list from the server, so new matches appear without editing this file
-    async function loadMatches() {
-        try {
-            const r = await fetch("/api/matches");
-            const list = await r.json();
-            const keep = sel.value;
-            sel.innerHTML = "";
-            for (const m of list) {
-                const o = document.createElement("option");
-                o.value = m.id;
-                o.textContent = m.name;
-                sel.appendChild(o);
-            }
-            if (keep && list.some((m) => m.id === keep)) sel.value = keep;
-            join();
-        } catch (e) {
-            $("status").textContent = "Cannot load the match list";
-        }
+  // build the match list from the server, so new matches appear without editing this file
+  async function loadMatches() {
+    try {
+      const r = await fetch("/api/matches");
+      const list = await r.json();
+      const keep = sel.value;
+      sel.innerHTML = "";
+      for (const m of list) {
+        const o = document.createElement("option");
+        o.value = m.id;
+        o.textContent = m.name;
+        sel.appendChild(o);
+      }
+      if (keep && list.some((m) => m.id === keep)) sel.value = keep;
+      join();
+    } catch (e) {
+      $("status").textContent = "Cannot load the match list";
     }
-    loadMatches();
+  }
+  loadMatches();
 </script>

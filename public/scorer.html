@@ -12,6 +12,16 @@
   #finish { width: 92%; background: #def; }
   input { font-size: 20px; padding: 10px; width: 90%; }
   .err { color: #c33; }
+  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; min-height: 28px; }
+  .free { background: #fc0; padding: 6px 10px; font-weight: bold; text-align: center; margin: 4px 0; }
+  .modes button, .runs button, .picks button { margin: 3px 0.7%; }
+  .modes button { width: 22%; font-size: 16px; padding: 12px 2px; }
+  .modes button.on { background: #fc6; border: 3px solid #c80; }
+  .runs button { width: 22%; font-size: 28px; padding: 16px 0; }
+  .picks button { width: 30%; font-size: 17px; padding: 12px 2px; }
+  #wktBtn { width: 92%; background: #f99; font-size: 24px; padding: 14px; }
+  .small { font-size: 15px; padding: 10px; }
+  .hint { color: #630; min-height: 22px; padding: 0 12px; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -38,6 +48,14 @@
     <div id="simpleView" style="display:none">
       <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
     </div>
+    <div id="crView" style="display:none">
+      <h1 id="crBig" style="margin:6px 0"></h1>
+      <div id="crOvers"></div>
+      <div id="crChase"></div>
+      <div id="crFirst"></div>
+      <div id="crFree" class="free" style="display:none">FREE HIT: only a run out is possible</div>
+      <div id="crOver" class="over"></div>
+    </div>
 
     <p id="status"></p>
     <p id="pending"></p>
@@ -57,6 +75,24 @@
       <button onclick="act('point','B',1)">B +1</button><button onclick="act('point','B',2)">B +2</button><button onclick="act('point','B',3)">B +3</button>
     </div>
     <button id="finish" onclick="finishMatch()">FINISH MATCH</button>
+  </div>
+
+  <div id="crControls" style="display:none">
+    <div class="modes">
+      <button id="m-wide" onclick="setMode('wide')">Wide</button><button id="m-noball" onclick="setMode('noball')">No ball</button><button id="m-bye" onclick="setMode('bye')">Bye</button><button id="m-legbye" onclick="setMode('legbye')">Leg bye</button>
+    </div>
+    <div id="crHint" class="hint"></div>
+    <div class="runs" id="runBtns">
+      <button id="r0" onclick="recordBall(0)">0</button><button id="r1" onclick="recordBall(1)">1</button><button id="r2" onclick="recordBall(2)">2</button><button id="r3" onclick="recordBall(3)">3</button><button id="r4" onclick="recordBall(4)">4</button><button id="r5" onclick="recordBall(5)">5</button><button id="r6" onclick="recordBall(6)">6</button>
+    </div>
+    <button id="wktBtn" onclick="openWicket()">WICKET</button>
+    <div id="wktPick" class="picks" style="display:none"></div>
+    <div id="runoutPick" class="picks" style="display:none"></div>
+    <div id="crLast" class="hint"></div>
+    <div>
+      <button class="small" onclick="endInnings()">End innings</button>
+      <button class="small" onclick="abandonMatch()">Abandon match</button>
+    </div>
   </div>
 
   <div id="undoRow" style="display:none">
@@ -108,9 +144,9 @@
   function save() { localStorage.setItem(QKEY, JSON.stringify(queue)); render(); }
   function newId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
 
-  function act(type, team, value) {
+  function act(type, team, value, data) {
     if (!sel.value) return;
-    queue.push({ id: newId(), matchId: sel.value, type, team, value });
+    queue.push({ id: newId(), matchId: sel.value, type, team, value, data });
     save();
     flush();
   }
@@ -134,6 +170,125 @@
     });
   }
 
+  // ---------- cricket scoring ----------
+  let mode = null;          // null | "wide" | "noball" | "bye" | "legbye"
+  let lastState = null;     // newest state of the selected match
+  let busyUntil = 0;        // ignores accidental double taps
+
+  const MODE_NAMES = { wide: "Wide", noball: "No ball", bye: "Bye", legbye: "Leg bye" };
+  const KIND_NAMES = { bowled: "Bowled", caught: "Caught", lbw: "LBW", stumped: "Stumped", runout: "Run out", hitwicket: "Hit wicket" };
+  const HINTS = {
+    wide: "WIDE: tap the EXTRA runs (0 if none, 4 if it went to the boundary)",
+    noball: "NO BALL: tap the runs hit off the bat (0 if none)",
+    bye: "BYE: tap the runs run (at least 1)",
+    legbye: "LEG BYE: tap the runs run (at least 1)",
+  };
+
+  function setMode(m) {
+    mode = mode === m ? null : m;
+    closePickers();
+    updateCricketUI();
+  }
+
+  function closePickers() {
+    $("wktPick").style.display = "none";
+    $("runoutPick").style.display = "none";
+  }
+
+  function updateCricketUI() {
+    for (const m of Object.keys(MODE_NAMES)) $("m-" + m).className = mode === m ? "on" : "";
+    $("crHint").textContent = mode ? HINTS[mode] : "";
+    $("r0").disabled = mode === "bye" || mode === "legbye";      // a bye needs at least 1 run
+  }
+
+  function describe(data) {
+    let t;
+    if (data.extra === "wide") t = "Wide" + (data.runs ? " + " + data.runs : "");
+    else if (data.extra === "noball") t = "No ball" + (data.runs ? " + " + data.runs + " off the bat" : "");
+    else if (data.extra === "bye") t = data.runs + " bye" + (data.runs > 1 ? "s" : "");
+    else if (data.extra === "legbye") t = data.runs + " leg bye" + (data.runs > 1 ? "s" : "");
+    else t = data.runs === 0 ? "Dot ball" : data.runs + (data.runs === 1 ? " run" : " runs");
+    if (data.wicket) t += " + WICKET (" + KIND_NAMES[data.wicket.kind] + ")";
+    return t;
+  }
+
+  function recordBall(runs, wicketKind) {
+    const now = Date.now();
+    if (now < busyUntil) return;
+    busyUntil = now + 600;
+    const data = { runs, extra: mode };
+    if (wicketKind) data.wicket = { kind: wicketKind };
+    act("ball", undefined, undefined, data);
+    $("crLast").textContent = "Sent: " + describe(data);
+    mode = null;
+    closePickers();
+    updateCricketUI();
+  }
+
+  function allowedKinds() {
+    if (lastState && lastState.freeHit) return ["runout"];
+    if (mode === "wide") return ["stumped", "runout", "hitwicket"];
+    if (mode) return ["runout"];
+    return ["bowled", "caught", "lbw", "stumped", "runout", "hitwicket"];
+  }
+
+  function openWicket() {
+    $("runoutPick").style.display = "none";
+    const box = $("wktPick");
+    if (box.style.display === "block") { box.style.display = "none"; return; }
+    box.innerHTML = "";
+    for (const kind of allowedKinds()) {
+      const b = document.createElement("button");
+      b.textContent = KIND_NAMES[kind];
+      b.onclick = () => pickKind(kind);
+      box.appendChild(b);
+    }
+    box.style.display = "block";
+  }
+
+  function pickKind(kind) {
+    if (kind !== "runout") { recordBall(0, kind); return; }
+    $("wktPick").style.display = "none";
+    const box = $("runoutPick");
+    box.innerHTML = "<div>Run out. How many runs were completed?</div>";
+    const from = mode === "bye" || mode === "legbye" ? 1 : 0;
+    for (let r = from; r <= 3; r++) {
+      const b = document.createElement("button");
+      b.textContent = r + (r === 1 ? " run" : " runs");
+      b.onclick = () => recordBall(r, "runout");
+      box.appendChild(b);
+    }
+    box.style.display = "block";
+  }
+
+  function endInnings() {
+    if (confirm("End this innings now?")) act("end_innings");
+  }
+
+  function abandonMatch() {
+    if (confirm("Abandon the match (no result)? You can still press UNDO afterwards.")) act("finish");
+  }
+
+  function showCricket(s) {
+    const ci = s.innings[s.inning - 1];
+    const first = s.innings[0];
+    $("crBig").textContent = "Team " + ci.battingTeam + " " + ci.runs + "/" + ci.wickets;
+    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
+
+    let chase = "";
+    if (s.inning === 2 && s.status !== "finished") {
+      chase = "Target " + s.target + ". Need " + s.need + " from " + s.ballsLeft + " balls";
+      if (s.requiredRate !== null) chase += " (required rate " + s.requiredRate.toFixed(2) + ")";
+    }
+    $("crChase").textContent = chase;
+    $("crFirst").textContent = s.inning === 2
+      ? "Team " + first.battingTeam + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
+      : "";
+    $("crOver").textContent = ci.recent.join("  ");
+    $("crFree").style.display = s.freeHit ? "block" : "none";
+    updateCricketUI();
+  }
+
   // ---------- connection + display ----------
   function render() {
     const online = socket && socket.connected;
@@ -146,13 +301,24 @@
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
 
+  function statusText(s) {
+    if (s.status !== "finished") return "LIVE";
+    if (s.resultText) return "FINISHED. " + s.resultText;
+    return "FINISHED. " + (s.winner === "draw" ? "Draw" : "Winner: Team " + s.winner);
+  }
+
   function showState(s) {
+    lastState = s;
     $("name").textContent = s.name;
     const isTT = s.sport === "table_tennis";
+    const isCR = s.sport === "cricket";
+    const isSimple = !isTT && !isCR;
     $("ttView").style.display = isTT ? "block" : "none";
-    $("simpleView").style.display = isTT ? "none" : "block";
+    $("simpleView").style.display = isSimple ? "block" : "none";
+    $("crView").style.display = isCR ? "block" : "none";
     $("ttControls").style.display = isTT ? "block" : "none";
-    $("simpleControls").style.display = isTT ? "none" : "block";
+    $("simpleControls").style.display = isSimple ? "block" : "none";
+    $("crControls").style.display = isCR && s.status !== "finished" ? "block" : "none";
     $("undoRow").style.display = "block";
 
     if (isTT) {
@@ -160,13 +326,19 @@
       $("gB").textContent = s.gamesB;
       $("pA").textContent = s.pointsA;
       $("pB").textContent = s.pointsB;
+    } else if (isCR) {
+      showCricket(s);
     } else {
       $("sA").textContent = s.scoreA;
       $("sB").textContent = s.scoreB;
     }
-    $("status").textContent = s.status === "finished"
-      ? "FINISHED. " + (s.winner === "draw" ? "Draw" : "Winner: Team " + s.winner)
-      : "LIVE";
+    $("status").textContent = statusText(s);
+  }
+
+  function hideAllViews() {
+    for (const id of ["ttView", "simpleView", "crView", "ttControls", "simpleControls", "crControls", "undoRow"]) {
+      $(id).style.display = "none";
+    }
   }
 
   function start() {
@@ -204,8 +376,10 @@
   }
 
   sel.onchange = () => {
-    $("ttView").style.display = $("simpleView").style.display = "none";
-    $("ttControls").style.display = $("simpleControls").style.display = $("undoRow").style.display = "none";
+    hideAllViews();
+    mode = null;
+    lastState = null;
+    $("crLast").textContent = "";
     $("name").textContent = "Loading...";
     join();
   };
