@@ -1,135 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sports Live</title>
 <style>
-  body { font-family: sans-serif; margin: 0; padding: 0 12px 24px; }
-  #conn { display: none; background: #c33; color: white; padding: 10px; text-align: center; font-weight: bold; margin: 0 -12px 8px; }
-  select { font-size: 18px; padding: 6px; margin-top: 8px; max-width: 100%; }
-  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; }
-  .free { display: inline-block; background: #fc0; padding: 4px 10px; font-weight: bold; border-radius: 4px; }
-  .small { color: #555; }
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #111; }
+  header { background: #1f3a5f; color: #fff; padding: 14px 16px; }
+  header h1 { margin: 0; font-size: 22px; }
+  .tabs { display: flex; gap: 6px; padding: 10px 12px; background: #fff; position: sticky; top: 0; border-bottom: 1px solid #ddd; z-index: 1; }
+  .tabs button { flex: 1; font-size: 15px; padding: 10px 2px; border: 1px solid #ccd; background: #fff; border-radius: 6px; }
+  .tabs button.on { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+  .bar { padding: 10px 12px 0; }
+  select { font-size: 16px; padding: 6px; max-width: 100%; }
+  main { padding: 0 12px 24px; }
+  a.card { display: block; background: #fff; border-radius: 8px; padding: 10px 12px; margin: 10px 0; text-decoration: none; color: inherit; border-left: 5px solid #bbb; box-shadow: 0 1px 2px #0002; }
+  a.card.live { border-left-color: #d22; }
+  a.card.finished { border-left-color: #2a7; }
+  .teams { font-weight: bold; font-size: 17px; margin-top: 2px; }
+  .headline { margin-top: 4px; }
+  .result { margin-top: 4px; font-weight: bold; color: #176; }
+  .small { color: #555; font-size: 14px; }
+  .liveTag { color: #d22; font-weight: bold; }
+  h2.day { font-size: 16px; margin: 18px 0 0; color: #345; }
+  h2.comp { font-size: 18px; margin: 18px 0 6px; }
+  table { border-collapse: collapse; width: 100%; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { padding: 8px 4px; text-align: center; border-bottom: 1px solid #eee; font-size: 15px; }
+  th.team, td.team { text-align: left; padding-left: 10px; }
+  th { background: #e8edf3; font-size: 13px; }
+  .note { color: #a40; font-size: 14px; padding: 6px 12px; min-height: 18px; }
+  .empty { color: #555; padding: 12px 2px; }
 </style>
+</head>
+<body>
+<header><h1>Sports Live</h1></header>
 
-<div id="conn">Reconnecting... the score below may be out of date</div>
-
-<select id="match"></select>
-
-<h2 id="name"></h2>
-
-<div id="tt" style="display:none">
-  <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
-  <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
-  <p id="history"></p>
+<div class="tabs">
+  <button data-tab="live" onclick="setTab('live')">Live</button>
+  <button data-tab="schedule" onclick="setTab('schedule')">Schedule</button>
+  <button data-tab="results" onclick="setTab('results')">Results</button>
+  <button data-tab="points" onclick="setTab('points')">Points</button>
 </div>
 
-<div id="simple" style="display:none">
-  <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+<div class="bar">
+  <select id="comp" onchange="render()"><option value="">All sports</option></select>
 </div>
+<div class="note" id="note"></div>
+<main id="list"></main>
 
-<div id="cricket" style="display:none">
-  <h1 id="crBig"></h1>
-  <h3 id="crOvers"></h3>
-  <p id="crChase"></p>
-  <p id="crFirst"></p>
-  <p id="crOver" class="over"></p>
-  <p id="crFree" class="free" style="display:none">FREE HIT</p>
-  <p id="crExtras" class="small"></p>
-</div>
-
-<p id="status"></p>
-
-<script src="/socket.io/socket.io.js"></script>
 <script>
-  const socket = io();
-  const sel = document.getElementById("match");
   const $ = (id) => document.getElementById(id);
-  const latest = {};                       // newest version seen for each match
+  let tab = "live";
+  let home = { matches: [], competitions: [] };
+  let standings = { competitions: [], points: null };
+  let loaded = false;
+  let failed = false;
 
-  function join() {
-    if (!sel.value) return;
-    socket.emit("join-match", sel.value);
+  function el(tag, text, cls) {
+    const e = document.createElement(tag);
+    if (text !== undefined && text !== null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
   }
 
-  sel.onchange = () => { $("name").textContent = "Loading..."; join(); };
+  const timeFmt = { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+  const dayFmt = { weekday: "long", day: "numeric", month: "long" };
+  const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString([], timeFmt) : "");
+  const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString([], dayFmt) : "Time to be announced");
 
-  socket.on("connect", () => { $("conn").style.display = "none"; join(); });
-  socket.on("disconnect", () => { $("conn").style.display = "block"; });
+  function card(m) {
+    const a = el("a", undefined, "card " + m.status);
+    a.href = "/match.html?id=" + encodeURIComponent(m.id);
 
-  function statusText(s) {
-    if (s.status !== "finished") return "LIVE";
-    if (s.resultText) return "FINISHED. " + s.resultText;
-    if (s.winner === "draw") return "Finished: draw";
-    return "Finished. Winner: Team " + s.winner;
-  }
+    const top = el("div", undefined, "small");
+    top.appendChild(document.createTextNode(m.competition + (m.stage === "knockout" ? " \u00b7 Knockout" : "") + " \u00b7 "));
+    if (m.status === "live") top.appendChild(el("span", "LIVE", "liveTag"));
+    else top.appendChild(document.createTextNode(m.status === "finished" ? "Finished" : (fmtTime(m.startTime) || "Time to be announced")));
+    a.appendChild(top);
 
-  function showCricket(s) {
-    const ci = s.innings[s.inning - 1];
-    const first = s.innings[0];
-    $("crBig").textContent = "Team " + ci.battingTeam + " " + ci.runs + "/" + ci.wickets;
-    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
+    a.appendChild(el("div", m.hasTeams ? m.teamA + " vs " + m.teamB : m.name, "teams"));
 
-    let chase = "";
-    if (s.inning === 2 && s.status !== "finished") {
-      chase = "Target " + s.target + ". Need " + s.need + " from " + s.ballsLeft + " balls";
-      if (s.requiredRate !== null) chase += " (required rate " + s.requiredRate.toFixed(2) + ")";
-    }
-    $("crChase").textContent = chase;
-
-    $("crFirst").textContent = s.inning === 2
-      ? "Team " + first.battingTeam + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
-      : "";
-
-    $("crOver").textContent = ci.recent.join("  ");
-    $("crFree").style.display = s.freeHit ? "inline-block" : "none";
-    $("crExtras").textContent = "Extras: " + ci.extras.total +
-      " (wides " + ci.extras.wides + ", no balls " + ci.extras.noBalls +
-      ", byes " + ci.extras.byes + ", leg byes " + ci.extras.legByes + ")";
-  }
-
-  socket.on("score:update", (s) => {
-    if (s.matchId !== sel.value) return;
-    if (s.version < (latest[s.matchId] || 0)) return;   // old news, ignore
-    latest[s.matchId] = s.version;
-
-    $("name").textContent = s.name;
-    const isTT = s.sport === "table_tennis";
-    const isCR = s.sport === "cricket";
-    $("tt").style.display = isTT ? "block" : "none";
-    $("cricket").style.display = isCR ? "block" : "none";
-    $("simple").style.display = (!isTT && !isCR) ? "block" : "none";
-
-    if (isTT) {
-      $("gA").textContent = s.gamesA;
-      $("gB").textContent = s.gamesB;
-      $("pA").textContent = s.pointsA;
-      $("pB").textContent = s.pointsB;
-      $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
-    } else if (isCR) {
-      showCricket(s);
+    if (m.status === "upcoming") {
+      if (m.venue) a.appendChild(el("div", m.venue, "small"));
     } else {
-      $("sA").textContent = s.scoreA;
-      $("sB").textContent = s.scoreB;
+      if (m.headline) a.appendChild(el("div", m.headline, "headline"));
+      if (m.status === "finished" && m.resultText) a.appendChild(el("div", m.resultText, "result"));
+      else if (m.venue) a.appendChild(el("div", m.venue, "small"));
+    }
+    return a;
+  }
+
+  function visible() {
+    const c = $("comp").value;
+    return home.matches.filter((m) => !c || m.competition === c);
+  }
+
+  function renderTable(c, points) {
+    const wrap = el("div");
+    wrap.appendChild(el("h2", c.name, "comp"));
+    const t = el("table");
+    const head = el("tr");
+    const cols = ["Team", "P", "W", "D", "L", "Pts", c.hasNrr ? "NRR" : "Diff"];
+    cols.forEach((h, i) => head.appendChild(el("th", h, i === 0 ? "team" : "")));
+    t.appendChild(head);
+    c.rows.forEach((r) => {
+      const tr = el("tr");
+      tr.appendChild(el("td", r.team, "team"));
+      [r.played, r.won, r.drawn, r.lost, r.points].forEach((v) => tr.appendChild(el("td", String(v))));
+      const last = c.hasNrr
+        ? (r.nrr === null ? "-" : (r.nrr > 0 ? "+" : "") + r.nrr.toFixed(3))
+        : (r.diff > 0 ? "+" : "") + r.diff;
+      tr.appendChild(el("td", last));
+      t.appendChild(tr);
+    });
+    wrap.appendChild(t);
+    return wrap;
+  }
+
+  function render() {
+    const box = $("list");
+    box.textContent = "";
+    document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+
+    if (!loaded) {
+      box.appendChild(el("p", failed ? "Cannot load the scores. Trying again..." : "Loading...", "empty"));
+      return;
     }
 
-    $("status").textContent = statusText(s);
-  });
+    const list = visible();
 
-  // build the match list from the server, so new matches appear without editing this file
-  async function loadMatches() {
-    try {
-      const r = await fetch("/api/matches");
-      const list = await r.json();
-      const keep = sel.value;
-      sel.innerHTML = "";
-      for (const m of list) {
-        const o = document.createElement("option");
-        o.value = m.id;
-        o.textContent = m.name;
-        sel.appendChild(o);
+    if (tab === "live") {
+      const live = list.filter((m) => m.status === "live");
+      if (live.length === 0) {
+        box.appendChild(el("p", "No match is live right now.", "empty"));
+        const next = list.filter((m) => m.status === "upcoming").slice(0, 5);
+        if (next.length) {
+          box.appendChild(el("h2", "Coming up", "day"));
+          next.forEach((m) => box.appendChild(card(m)));
+        }
+      } else {
+        live.forEach((m) => box.appendChild(card(m)));
       }
-      if (keep && list.some((m) => m.id === keep)) sel.value = keep;
-      join();
-    } catch (e) {
-      $("status").textContent = "Cannot load the match list";
+    } else if (tab === "schedule") {
+      if (list.length === 0) box.appendChild(el("p", "No matches yet.", "empty"));
+      let lastDay = null;
+      list.forEach((m) => {
+        const day = fmtDay(m.startTime);
+        if (day !== lastDay) { box.appendChild(el("h2", day, "day")); lastDay = day; }
+        box.appendChild(card(m));
+      });
+    } else if (tab === "results") {
+      const done = list.filter((m) => m.status === "finished").reverse();
+      if (done.length === 0) box.appendChild(el("p", "No results yet.", "empty"));
+      done.forEach((m) => box.appendChild(card(m)));
+    } else {
+      const c = $("comp").value;
+      const tables = standings.competitions.filter((x) => !c || x.name === c);
+      if (tables.length === 0) box.appendChild(el("p", "No finished group-stage matches yet.", "empty"));
+      tables.forEach((x) => box.appendChild(renderTable(x, standings.points)));
+      if (tables.length && standings.points) {
+        box.appendChild(el("p", "Win " + standings.points.win + ", draw / tie / no result " + standings.points.draw +
+          ", loss " + standings.points.loss + ". Only group-stage matches count. P played, W won, D drawn, L lost, " +
+          "NRR net run rate, Diff score difference.", "small"));
+      }
     }
   }
-  loadMatches();
+
+  function fillCompetitions() {
+    const sel = $("comp");
+    const keep = sel.value;
+    sel.innerHTML = "";
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "All sports";
+    sel.appendChild(all);
+    for (const name of home.competitions) {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      sel.appendChild(o);
+    }
+    if (keep && home.competitions.includes(keep)) sel.value = keep;
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch("/api/home", { cache: "no-store" });
+      if (!r.ok) throw new Error("bad status " + r.status);
+      home = await r.json();
+      if (tab === "points") {
+        const s = await fetch("/api/standings", { cache: "no-store" });
+        if (s.ok) standings = await s.json();
+      }
+      loaded = true;
+      failed = false;
+      $("note").textContent = "";
+    } catch (e) {
+      failed = true;
+      $("note").textContent = loaded ? "Connection problem. Showing the last scores." : "";
+    }
+    fillCompetitions();
+    render();
+  }
+
+  function setTab(t) {
+    tab = t;
+    render();
+    if (t === "points") refresh();
+  }
+
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+  setInterval(() => { if (document.visibilityState !== "hidden") refresh(); }, 10000);
+  render();
+  refresh();
 </script>
+</body>
+</html>

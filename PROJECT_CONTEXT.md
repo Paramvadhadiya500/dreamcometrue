@@ -1,6 +1,6 @@
 # PROJECT CONTEXT: College Live Score
 
-Last updated: 2026-10-11, after Lesson 10 (cricket engine).
+Last updated: 2026-10-12, after Lesson 11 (admin panel, student home page, schedule, points table).
 Keep the "Status" section current. Never put passwords, tokens or the contents of .env in this file.
 
 ## 1. What this is
@@ -20,21 +20,26 @@ Repo: github.com/Paramvadhadiya500/dreamcometrue (local folder on my laptop is c
 
 ## 3. Stack
 - Backend: Node.js + Express, Socket.IO (rooms: one per match), `pg` (PostgreSQL), `redis` + `@socket.io/redis-adapter`, `jsonwebtoken`, `bcryptjs`.
-- Frontend: two plain HTML pages, no framework: `public/index.html` (students) and `public/scorer.html` (scorers).
+- Frontend: plain HTML pages, no framework: `public/index.html` (student home: Live / Schedule / Results / Points), `public/match.html?id=...` (one live match),
+  `public/scorer.html` (scorers), `public/admin.html` (admin panel).
 - Database: PostgreSQL 16. Cache and pub/sub: Redis 7.
 - Deploy: Docker Compose on one AWS EC2 server (Ubuntu 24.04, region ap-south-1 Mumbai, Elastic IP, 20 GiB gp3). Caddy is the web server.
 - No domain yet. Caddyfile is `:80 { encode gzip  reverse_proxy app:3000 }` = plain HTTP only (test setup). HTTPS is still to do.
 
 ## 4. Folder layout
 ```
-server.js            main server (login, sockets, score actions, API)
+server.js            main server (login, sockets, score actions, API routes, wiring)
+home.js              builds /api/home and /api/standings (cached 3 s, JSON text cached too)
+admin.js             admin API router (/api/admin/*): matches, scorers
+standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
 engine.js            table tennis rules + effectivePoints() (undo handling)
 engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket
-engines/tableTennis.js, simple.js, cricket.js
+engines/tableTennis.js, simple.js, cricket.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
+                     (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
 add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis [--overs --players --first --freehit --bestof --scorer]
 test.js              unit tests (all rules, a 400-game random cricket test)
@@ -59,7 +64,17 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   Known gap: the scorer's own screen does not update while offline.
 - Auth: `POST /login` -> JWT (12 h) with only the username. Socket handshake sends the token; students have none. Roles: admin, scorer, student.
   `users.active=false` cuts a lost phone off immediately (checked on every action).
-- Other routes: `GET /api/matches` (cached 10 s), `GET /health`.
+- HTTP routes: `GET /api/home` and `GET /api/standings` (public, cached 3 s), `GET /api/match/:id` (public, cached 10 s),
+  `GET /api/my-matches` (scorer/admin; the scorer page polls it every 30 s), `/api/admin/*` (admin only, JWT in the Authorization header,
+  checked against the database on every request), `GET /api/matches` (old, cached 10 s), `GET /health`. Unknown /api paths answer JSON 404.
+- Admin API: GET /overview; POST /matches; PUT /matches/:id; DELETE /matches/:id (a match with scores needs body {confirm:"DELETE"});
+  POST /users (creates a scorer, returns a generated password ONCE); POST /users/:u/reset; POST /users/:u/active {active}.
+  Scorers/admins are separate: the API only manages scorers. Create admins with add-user.js. Sport and settings of a match with scores are locked (409).
+  After an admin change the server clears the Redis state, rebuilds it and pushes it to open pages (so new team names appear at once).
+- Team names: matches.team_a / team_b; the state has teamA / teamB ("Team A"/"Team B" when empty). Cricket result text has the real names.
+- Home page data: status is upcoming (no events), live, or finished (from the state). Home pages poll every 10 s; the match page is live through sockets.
+- Points table: only stage='group', finished, two different non-empty team names (matched ignoring case/spaces), grouped by competition
+  (the competition text, or the sport name). Order: points, wins, NRR (cricket) or score difference, name. Abandoned cricket = 1 point each, no NRR change.
 
 ## 6. Actions and state per sport
 - table_tennis (settings: matches.best_of): actions `point{team A|B}`, `undo`. State: pointsA/B, gamesA/B, finishedGames, winner, status.
@@ -75,7 +90,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
 - users(username PK, password_hash, role admin|scorer, active)
-- matches(id PK, name, best_of, sport, config jsonb)
+- matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, stage group|knockout, venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
   type in: point, undo, finish, ball, end_innings
@@ -115,14 +130,16 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 4. `migrate.js` looked for .sql files in the wrong folder and said "up to date" without applying anything. It must use `path.join(__dirname, "migrations")`.
 5. New code was deployed before the database migration ran, so every request crashed (missing column `sport`).
 6. Matches created with SQL on the laptop did not exist on the server (separate databases).
-7. Placeholder passwords from instructions (like CHOOSE-A-PASSWORD1) were used as real passwords. Set real ones.
+7. Placeholder passwords from instructions (like CHOOSE-A-PASSWORD1) were used as real passwords. Set real ones. Admin passwords especially: the admin panel is public on the internet (HTTP).
 8. The image must be rebuilt (`up -d --build`) before `migrate.js` runs, or new files are missing inside the container.
 
 ## 11. Status
-Done: Lessons 1-10: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
-AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen.
+Done: Lessons 1-11: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
+AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen,
+admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).
-To do next: Lesson 11 admin panel (create matches/scorers from a web page), real team names, student home page (schedule, points table);
-football engine; HTTPS + login rate limiting + hardening; full mock event with real scorers on real phones; rehearse a restore.
-Known gaps: HTTP only; demo/placeholder passwords must be replaced; no admin UI (matches are created by script); single server (single point of failure);
-backups are manual (hourly cron not confirmed); cricket limits in section 6; scorer screen does not update while offline.
+To do next: football engine; HTTPS + login rate limiting + hardening (Lesson 12/13); full mock event with real scorers on real phones; rehearse a restore.
+Known gaps: HTTP only (admin and scorer passwords travel unencrypted); no login rate limiting; demo/placeholder passwords must be replaced;
+single server (single point of failure); backups are manual (hourly cron not confirmed); cricket limits in section 6;
+scorer screen does not update while offline; no team list (names are typed, matched ignoring case); home list refreshes by polling every 10 s;
+a match with scores can only be deleted by typing DELETE (it removes its scores); no admin screen for admin accounts or for changing the points rules (they are constants in standings.js).

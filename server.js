@@ -8,6 +8,9 @@ const bcrypt = require("bcryptjs");
 const pool = require("./db");
 const { effectivePoints } = require("./engine");
 const { getEngine } = require("./engines");
+const { createHome } = require("./home");
+const { competitionOf } = require("./standings");
+const { createAdminRouter } = require("./admin");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
 const PORT = process.env.PORT || 3000;
@@ -42,16 +45,27 @@ redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[3])
 return 1
 `;
 
+// Team names shown to students; "Team A" / "Team B" when the admin gave none.
+function teamNames(match) {
+  return { A: (match.team_a || "").trim() || "Team A", B: (match.team_b || "").trim() || "Team B" };
+}
+
 function buildState(match, events) {
   const engine = getEngine(match.sport);
   if (!engine) throw new Error("unknown sport: " + match.sport);
   const s = engine.compute(effectivePoints(events), match);
   const last = events.length ? Number(events[events.length - 1].seq) : 0;
-  return { matchId: match.id, name: match.name, sport: match.sport, ...s, version: last };
+  const names = teamNames(match);
+  const state = { matchId: match.id, name: match.name, sport: match.sport, teamA: names.A, teamB: names.B, ...s, version: last };
+  // the cricket engine writes "Team A won by ..."; show the real team names instead
+  if (typeof state.resultText === "string") {
+    state.resultText = state.resultText.replace(/\bTeam ([AB])\b/g, (_, t) => names[t]);
+  }
+  return state;
 }
 
 async function loadStateFromDb(matchId) {
-  const m = await pool.query("SELECT id, name, best_of, sport, config FROM matches WHERE id = $1", [matchId]);
+  const m = await pool.query("SELECT id, name, best_of, sport, config, team_a, team_b FROM matches WHERE id = $1", [matchId]);
   if (m.rowCount === 0) return null;
   const ev = await pool.query("SELECT seq, type, team, value, data FROM events WHERE match_id = $1 ORDER BY seq", [matchId]);
   return buildState(m.rows[0], ev.rows);
@@ -113,7 +127,7 @@ async function applyAction({ id, matchId, type, team, value, data }, username) {
   try {
     await client.query("BEGIN");
     const m = await client.query(
-      "SELECT id, name, best_of, sport, config FROM matches WHERE id = $1 FOR UPDATE", [matchId]
+      "SELECT id, name, best_of, sport, config, team_a, team_b FROM matches WHERE id = $1 FOR UPDATE", [matchId]
     );
     if (m.rowCount === 0) return await fail("unknown match");
     const engine = getEngine(m.rows[0].sport);
@@ -159,6 +173,49 @@ async function applyAction({ id, matchId, type, team, value, data }, username) {
   }
 }
 
+// ---------- who is calling (for the HTTP routes) ----------
+async function userFromRequest(req) {
+  const header = req.headers.authorization || "";
+  if (!header.startsWith("Bearer ")) return null;
+  let payload;
+  try {
+    payload = jwt.verify(header.slice(7), JWT_SECRET);
+  } catch (e) {
+    return null;                                           // bad or expired token
+  }
+  if (!payload || typeof payload.username !== "string") return null;
+  const r = await pool.query("SELECT username, role, active FROM users WHERE username = $1", [payload.username]);
+  if (r.rowCount === 0 || !r.rows[0].active) return null;
+  return { username: r.rows[0].username, role: r.rows[0].role };
+}
+
+function requireRole(...roles) {
+  return async (req, res, next) => {
+    try {
+      const user = await userFromRequest(req);
+      if (!user) return res.status(401).json({ error: "login required" });
+      if (!roles.includes(user.role)) return res.status(403).json({ error: "not allowed" });
+      req.user = user;
+      next();
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: "server error" });
+    }
+  };
+}
+
+// the matches a scorer may score (an admin may score all of them)
+async function listMatchesFor(username, role) {
+  const r = role === "admin"
+    ? await pool.query("SELECT id, name, sport FROM matches ORDER BY start_time ASC NULLS LAST, created_at ASC, id ASC")
+    : await pool.query(
+        `SELECT m.id, m.name, m.sport FROM matches m
+         JOIN match_scorers ms ON ms.match_id = m.id
+         WHERE ms.username = $1
+         ORDER BY m.start_time ASC NULLS LAST, m.created_at ASC, m.id ASC`, [username]);
+  return r.rows;
+}
+
 // ---------- login ----------
 app.post("/login", async (req, res) => {
   try {
@@ -174,14 +231,9 @@ app.post("/login", async (req, res) => {
     if (!u || !u.active || !ok) {
       return res.status(401).json({ error: "wrong username or password" });
     }
-    const list = u.role === "admin"
-      ? await pool.query("SELECT id, name, sport FROM matches ORDER BY id")
-      : await pool.query(
-          `SELECT m.id, m.name, m.sport FROM matches m
-           JOIN match_scorers ms ON ms.match_id = m.id
-           WHERE ms.username = $1 ORDER BY m.id`, [u.username]);
+    const matches = await listMatchesFor(u.username, u.role);
     const token = jwt.sign({ username: u.username }, JWT_SECRET, { expiresIn: "12h" });
-    res.json({ token, username: u.username, role: u.role, matches: list.rows });
+    res.json({ token, username: u.username, role: u.role, matches });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server error" });
@@ -205,6 +257,102 @@ app.get("/api/matches", async (req, res) => {
 
 // ---------- simple health check (useful later for the load balancer) ----------
 app.get("/health", (req, res) => res.json({ ok: true, port: PORT }));
+
+// ---------- when the admin changes a match: refresh caches and tell the viewers ----------
+const home = createHome({ pool, getState, getEngine });
+const matchMetaCache = new Map();                          // matchId -> { at, data }
+
+async function afterMatchChange(matchId, { removed = false } = {}) {
+  home.invalidate();
+  matchMetaCache.delete(matchId);
+  matchListCache = { at: 0, rows: [] };
+  try { await cache.del("state:" + matchId); } catch (e) { console.error("cache delete failed:", e.message); }
+  if (removed) return;
+  try {
+    const state = await loadStateFromDb(matchId);
+    if (state) {
+      await cacheState(state);
+      io.to(matchId).emit("score:update", state);          // names on open pages update at once
+    }
+  } catch (e) {
+    console.error("refresh after admin change failed:", e.message);
+  }
+}
+
+app.use("/api/admin", createAdminRouter({ pool, requireAdmin: requireRole("admin"), afterMatchChange }));
+
+// ---------- pages for students ----------
+app.get("/api/home", async (req, res) => {
+  try {
+    const data = await home.get();
+    res.set("Cache-Control", "public, max-age=3");
+    res.type("application/json").send(data.homeJson);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+app.get("/api/standings", async (req, res) => {
+  try {
+    const data = await home.get();
+    res.set("Cache-Control", "public, max-age=3");
+    res.type("application/json").send(data.standingsJson);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// details of one match (names, place, time), cached for 10 seconds
+app.get("/api/match/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!/^[a-z0-9-]{1,40}$/.test(id)) return res.status(404).json({ error: "match not found" });
+    const hit = matchMetaCache.get(id);
+    if (hit && Date.now() - hit.at < 10000) return res.json(hit.data);
+    const r = await pool.query(
+      "SELECT id, name, sport, team_a, team_b, competition, stage, venue, start_time FROM matches WHERE id = $1", [id]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: "match not found" });
+    const m = r.rows[0];
+    const data = {
+      id: m.id,
+      name: m.name,
+      sport: m.sport,
+      competition: competitionOf({ competition: m.competition, sport: m.sport }),
+      stage: m.stage,
+      venue: m.venue,
+      startTime: m.start_time ? new Date(m.start_time).toISOString() : null,
+      teamA: (m.team_a || "").trim() || "Team A",
+      teamB: (m.team_b || "").trim() || "Team B",
+    };
+    matchMetaCache.set(id, { at: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// the scorer's current list of matches (so a new assignment shows up without logging in again)
+app.get("/api/my-matches", requireRole("scorer", "admin"), async (req, res) => {
+  try {
+    res.json(await listMatchesFor(req.user.username, req.user.role));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "server error" });
+  }
+});
+
+// unknown API paths answer with JSON, and bad JSON in a request gets a clear message
+app.use("/api", (req, res) => res.status(404).json({ error: "not found" }));
+app.use((err, req, res, next) => {
+  if (err && err.type === "entity.parse.failed") return res.status(400).json({ error: "bad request" });
+  if (err && err.type === "entity.too.large") return res.status(413).json({ error: "request too large" });
+  console.error(err);
+  res.status(500).json({ error: "server error" });
+});
 
 // ---------- socket authentication ----------
 io.use(async (socket, next) => {

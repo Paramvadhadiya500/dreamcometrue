@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #111; }
+  header { background: #1f3a5f; color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  header h1 { margin: 0; font-size: 20px; flex: 1; }
+  header a { color: #cde; }
+  .tabs { display: flex; gap: 6px; padding: 10px 12px; background: #fff; border-bottom: 1px solid #ddd; }
+  .tabs button { font-size: 16px; padding: 10px 18px; border: 1px solid #ccd; background: #fff; border-radius: 6px; }
+  .tabs button.on { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+  main { padding: 12px; max-width: 900px; margin: 0 auto; }
+  button { font-size: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #aab; background: #fff; cursor: pointer; }
+  button.primary { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+  button.danger { color: #a00; border-color: #c88; }
+  input, select { font-size: 16px; padding: 7px; max-width: 100%; box-sizing: border-box; }
+  label { display: block; margin-top: 10px; font-weight: bold; font-size: 14px; }
+  .box { background: #fff; border-radius: 8px; padding: 12px 14px; margin: 12px 0; box-shadow: 0 1px 2px #0002; }
+  .row { background: #fff; border-radius: 8px; padding: 10px 12px; margin: 10px 0; box-shadow: 0 1px 2px #0002; }
+  .row .title { font-weight: bold; font-size: 17px; }
+  .small { color: #555; font-size: 14px; }
+  .warn { color: #a40; }
+  .err { color: #c22; margin-top: 8px; min-height: 18px; }
+  .good { background: #e6f7ec; border: 1px solid #2a7; padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 17px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cols > div > input, .cols > div > select { width: 100%; }
+  input.wide, select.wide { width: 100%; }
+  .checks label { display: inline-block; font-weight: normal; margin: 6px 14px 0 0; }
+  .checks input { width: auto; }
+  .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  #loginBox { max-width: 340px; margin: 40px auto; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="box" style="display:none">
+  <h2 style="margin-top:0">Admin login</h2>
+  <input id="u" class="wide" placeholder="username" autocapitalize="none"><br><br>
+  <input id="p" class="wide" type="password" placeholder="password"><br><br>
+  <button class="primary" onclick="login()">Log in</button>
+  <p id="loginErr" class="err"></p>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <h1>Admin</h1>
+    <span id="who" class="small" style="color:#cde"></span>
+    <a href="/" target="_blank">Student page</a>
+    <a href="/scorer.html" target="_blank">Scorer page</a>
+    <button onclick="logout()">Log out</button>
+  </header>
+  <div class="tabs">
+    <button id="tabMatches" onclick="showTab('matches')">Matches</button>
+    <button id="tabScorers" onclick="showTab('scorers')">Scorers</button>
+  </div>
+
+  <main>
+    <section id="matchesTab">
+      <button class="primary" id="newBtn" onclick="openForm(null)">+ New match</button>
+      <div id="pageErr" class="err"></div>
+
+      <div id="formBox" class="box" style="display:none">
+        <h3 id="formTitle" style="margin-top:0">New match</h3>
+        <div id="lockNote" class="small warn" style="display:none">Scoring has started, so the sport and its settings are locked. You can still change names, place, time and scorers.</div>
+
+        <div class="cols">
+          <div><label for="fSport">Sport</label>
+            <select id="fSport" onchange="sportChanged()">
+              <option value="cricket">Cricket</option>
+              <option value="table_tennis">Table Tennis</option>
+              <option value="simple">Other sport (simple score)</option>
+            </select></div>
+          <div><label for="fComp">Competition (groups the points table)</label>
+            <input id="fComp" list="compList" placeholder="e.g. Cricket (Boys)"></div>
+        </div>
+
+        <div class="cols">
+          <div><label for="fTeamA">Team A</label><input id="fTeamA" list="teamList" placeholder="e.g. CSE"></div>
+          <div><label for="fTeamB">Team B</label><input id="fTeamB" list="teamList" placeholder="e.g. ECE"></div>
+        </div>
+
+        <div class="cols">
+          <div><label for="fTime">Date and time</label><input id="fTime" type="datetime-local"></div>
+          <div><label for="fVenue">Venue</label><input id="fVenue" placeholder="e.g. Ground 1"></div>
+        </div>
+
+        <div class="cols">
+          <div><label for="fStage">Stage</label>
+            <select id="fStage"><option value="group">Group (counts in the points table)</option><option value="knockout">Knockout</option></select></div>
+          <div><label for="fName">Match name (optional)</label><input id="fName" placeholder="made from the teams if empty"></div>
+        </div>
+
+        <div id="crGroup">
+          <label>Cricket settings</label>
+          <div class="cols">
+            <div><span class="small">Overs per innings (1-50)</span><input id="fOvers" type="number" min="1" max="50" value="10"></div>
+            <div><span class="small">Players per team (2-11)</span><input id="fPlayers" type="number" min="2" max="11" value="11"></div>
+          </div>
+          <div class="cols">
+            <div><span class="small">Bats first</span>
+              <select id="fFirst"><option value="A">Team A</option><option value="B">Team B</option></select></div>
+            <div><span class="small">Free hit after a no ball</span>
+              <select id="fFree"><option value="true">Yes</option><option value="false">No</option></select></div>
+          </div>
+        </div>
+
+        <div id="ttGroup" style="display:none">
+          <label for="fBest">Table tennis: best of</label>
+          <select id="fBest"><option value="1">1 game</option><option value="3" selected>3 games</option><option value="5">5 games</option><option value="7">7 games</option></select>
+        </div>
+
+        <label>Scorers for this match</label>
+        <div id="fScorers" class="checks"></div>
+
+        <div id="fErr" class="err"></div>
+        <div class="actions">
+          <button class="primary" id="fSave" onclick="saveForm()">Save</button>
+          <button onclick="closeForm()">Cancel</button>
+        </div>
+      </div>
+
+      <div id="matchList"></div>
+    </section>
+
+    <section id="scorersTab" style="display:none">
+      <div class="box">
+        <h3 style="margin-top:0">New scorer</h3>
+        <input id="newUser" placeholder="username (a-z, 0-9, _)" autocapitalize="none">
+        <button class="primary" onclick="createScorer()">Create</button>
+        <div id="newErr" class="err"></div>
+      </div>
+      <div id="secret"></div>
+      <div id="scorerList"></div>
+    </section>
+  </main>
+</div>
+
+<datalist id="teamList"></datalist>
+<datalist id="compList"></datalist>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const SKEY = "admin-session";
+  let session = JSON.parse(localStorage.getItem(SKEY) || "null");
+  let overview = { matches: [], users: [], teams: [], competitions: [] };
+  let editingId = null;
+
+  const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", simple: "Other sport" };
+
+  function el(tag, text, cls) {
+    const e = document.createElement(tag);
+    if (text !== undefined && text !== null) e.textContent = text;
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  // ---------- talking to the server ----------
+  async function api(method, path, body) {
+    const r = await fetch("/api/admin" + path, {
+      method,
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.token },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let data = {};
+    try { data = await r.json(); } catch (e) { /* no body */ }
+    if (r.status === 401 || r.status === 403) { logout("Session expired. Please log in again."); throw new Error("login required"); }
+    if (!r.ok) throw new Error(data.error || "request failed");
+    return data;
+  }
+
+  // ---------- login ----------
+  async function login() {
+    $("loginErr").textContent = "";
+    try {
+      const r = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: $("u").value.trim(), password: $("p").value }),
+      });
+      const data = await r.json();
+      if (!r.ok) { $("loginErr").textContent = data.error || "login failed"; return; }
+      if (data.role !== "admin") { $("loginErr").textContent = "This page is for admins only."; return; }
+      session = { token: data.token, username: data.username };
+      localStorage.setItem(SKEY, JSON.stringify(session));
+      $("p").value = "";
+      start();
+    } catch (e) {
+      $("loginErr").textContent = "Cannot reach the server";
+    }
+  }
+
+  function logout(message) {
+    localStorage.removeItem(SKEY);
+    session = null;
+    $("app").style.display = "none";
+    $("loginBox").style.display = "block";
+    $("loginErr").textContent = typeof message === "string" ? message : "";
+  }
+
+  function start() {
+    $("loginBox").style.display = "none";
+    $("app").style.display = "block";
+    $("who").textContent = session.username;
+    showTab("matches");
+    load();
+  }
+
+  async function load() {
+    try {
+      overview = await api("GET", "/overview");
+      $("pageErr").textContent = "";
+      renderAll();
+    } catch (e) {
+      if (session) $("pageErr").textContent = "Could not load: " + e.message;
+    }
+  }
+
+  function showTab(t) {
+    $("matchesTab").style.display = t === "matches" ? "block" : "none";
+    $("scorersTab").style.display = t === "scorers" ? "block" : "none";
+    $("tabMatches").className = t === "matches" ? "on" : "";
+    $("tabScorers").className = t === "scorers" ? "on" : "";
+  }
+
+  // ---------- showing the data ----------
+  const timeFmt = { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+
+  function renderAll() {
+    renderMatches();
+    renderScorers();
+    fillList("teamList", overview.teams);
+    fillList("compList", overview.competitions);
+  }
+
+  function fillList(id, values) {
+    const box = $(id);
+    box.innerHTML = "";
+    for (const v of values) {
+      const o = document.createElement("option");
+      o.value = v;
+      box.appendChild(o);
+    }
+  }
+
+  function renderMatches() {
+    const box = $("matchList");
+    box.textContent = "";
+    if (overview.matches.length === 0) box.appendChild(el("p", "No matches yet. Press + New match.", "small"));
+    for (const m of overview.matches) {
+      const row = el("div", undefined, "row");
+      row.appendChild(el("div", m.name, "title"));
+      const bits = [SPORT_NAMES[m.sport] || m.sport];
+      if (m.competition) bits.push(m.competition);
+      if (m.stage === "knockout") bits.push("Knockout");
+      if (m.teamA) bits.push(m.teamA + " vs " + m.teamB);
+      if (m.startTime) bits.push(new Date(m.startTime).toLocaleString([], timeFmt));
+      if (m.venue) bits.push(m.venue);
+      row.appendChild(el("div", bits.join(" \u00b7 "), "small"));
+      if (m.scorers.length) row.appendChild(el("div", "Scorers: " + m.scorers.join(", "), "small"));
+      else row.appendChild(el("div", "No scorer assigned", "small warn"));
+      row.appendChild(el("div", m.events === 0 ? "Not started" : m.events + " scoring actions", "small"));
+
+      const actions = el("div", undefined, "actions");
+      const edit = el("button", "Edit");
+      edit.onclick = () => openForm(m);
+      const del = el("button", "Delete", "danger");
+      del.onclick = () => deleteMatch(m);
+      actions.appendChild(edit);
+      actions.appendChild(del);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  function renderScorers() {
+    const box = $("scorerList");
+    box.textContent = "";
+    const scorers = overview.users.filter((u) => u.role === "scorer");
+    if (scorers.length === 0) box.appendChild(el("p", "No scorers yet.", "small"));
+    for (const u of scorers) {
+      const row = el("div", undefined, "row");
+      row.appendChild(el("div", u.username, "title"));
+      row.appendChild(el("div", (u.active ? "Active" : "Disabled") + " \u00b7 " + u.matches + " matches", u.active ? "small" : "small warn"));
+      const actions = el("div", undefined, "actions");
+      const reset = el("button", "New password");
+      reset.onclick = () => resetPassword(u.username);
+      const toggle = el("button", u.active ? "Disable" : "Enable", u.active ? "danger" : "");
+      toggle.onclick = () => setActive(u.username, !u.active);
+      actions.appendChild(reset);
+      actions.appendChild(toggle);
+      row.appendChild(actions);
+      box.appendChild(row);
+    }
+  }
+
+  // ---------- the match form ----------
+  const pad = (n) => String(n).padStart(2, "0");
+  function toLocalInput(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+
+  function sportChanged() {
+    const s = $("fSport").value;
+    $("crGroup").style.display = s === "cricket" ? "block" : "none";
+    $("ttGroup").style.display = s === "table_tennis" ? "block" : "none";
+  }
+
+  function openForm(m) {
+    editingId = m ? m.id : null;
+    $("formTitle").textContent = m ? "Edit match" : "New match";
+    $("fErr").textContent = "";
+    $("fSport").value = m ? m.sport : "cricket";
+    $("fComp").value = m ? m.competition : "";
+    $("fTeamA").value = m ? m.teamA : "";
+    $("fTeamB").value = m ? m.teamB : "";
+    $("fTime").value = m ? toLocalInput(m.startTime) : "";
+    $("fVenue").value = m ? m.venue : "";
+    $("fStage").value = m ? m.stage : "group";
+    $("fName").value = m ? m.name : "";
+    const c = m && m.sport === "cricket" ? m.config : { overs: 10, players: 11, firstBatting: "A", freeHit: true };
+    $("fOvers").value = c.overs;
+    $("fPlayers").value = c.players;
+    $("fFirst").value = c.firstBatting;
+    $("fFree").value = String(c.freeHit);
+    $("fBest").value = String(m ? m.bestOf : 3);
+    sportChanged();
+
+    const locked = !!(m && m.events > 0);
+    $("lockNote").style.display = locked ? "block" : "none";
+    for (const id of ["fSport", "fOvers", "fPlayers", "fFirst", "fFree", "fBest"]) $(id).disabled = locked;
+
+    const box = $("fScorers");
+    box.textContent = "";
+    const scorers = overview.users.filter((u) => u.role === "scorer");
+    if (scorers.length === 0) box.appendChild(el("span", "No scorers yet. Create them in the Scorers tab.", "small"));
+    for (const u of scorers) {
+      const label = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = u.username;
+      cb.checked = !!(m && m.scorers.includes(u.username));
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(" " + u.username + (u.active ? "" : " (disabled)")));
+      box.appendChild(label);
+    }
+    $("formBox").style.display = "block";
+    $("formBox").scrollIntoView && $("formBox").scrollIntoView({ block: "start" });
+  }
+
+  function closeForm() {
+    $("formBox").style.display = "none";
+    editingId = null;
+  }
+
+  function readForm() {
+    const sport = $("fSport").value;
+    const body = {
+      sport,
+      competition: $("fComp").value,
+      stage: $("fStage").value,
+      teamA: $("fTeamA").value,
+      teamB: $("fTeamB").value,
+      venue: $("fVenue").value,
+      name: $("fName").value,
+      startTime: $("fTime").value ? new Date($("fTime").value).toISOString() : null,
+      scorers: [...document.querySelectorAll("#fScorers input:checked")].map((c) => c.value),
+    };
+    if (sport === "cricket") {
+      body.config = {
+        overs: parseInt($("fOvers").value, 10),
+        players: parseInt($("fPlayers").value, 10),
+        firstBatting: $("fFirst").value,
+        freeHit: $("fFree").value === "true",
+      };
+    }
+    if (sport === "table_tennis") body.bestOf = parseInt($("fBest").value, 10);
+    return body;
+  }
+
+  async function saveForm() {
+    $("fErr").textContent = "";
+    $("fSave").disabled = true;
+    try {
+      const body = readForm();
+      if (editingId) await api("PUT", "/matches/" + encodeURIComponent(editingId), body);
+      else await api("POST", "/matches", body);
+      closeForm();
+      await load();
+    } catch (e) {
+      $("fErr").textContent = e.message;
+    } finally {
+      $("fSave").disabled = false;
+    }
+  }
+
+  async function deleteMatch(m) {
+    if (!confirm('Delete "' + m.name + '"?')) return;
+    let body;
+    if (m.events > 0) {
+      const word = prompt("This match has " + m.events + " scoring actions. They will be deleted too.\nType DELETE to continue.");
+      if (word !== "DELETE") return;
+      body = { confirm: "DELETE" };
+    }
+    try {
+      await api("DELETE", "/matches/" + encodeURIComponent(m.id), body);
+      if (editingId === m.id) closeForm();
+      await load();
+    } catch (e) {
+      $("pageErr").textContent = e.message;
+    }
+  }
+
+  // ---------- scorers ----------
+  function showSecret(who, password) {
+    const box = $("secret");
+    box.textContent = "";
+    const d = el("div", undefined, "good");
+    d.appendChild(el("div", "Password for " + who + ":"));
+    d.appendChild(el("b", password));
+    d.appendChild(el("div", "Copy it now. It is shown only once.", "small"));
+    box.appendChild(d);
+  }
+
+  async function createScorer() {
+    $("newErr").textContent = "";
+    try {
+      const r = await api("POST", "/users", { username: $("newUser").value.trim() });
+      $("newUser").value = "";
+      showSecret(r.username, r.password);
+      await load();
+    } catch (e) {
+      $("newErr").textContent = e.message;
+    }
+  }
+
+  async function resetPassword(username) {
+    if (!confirm("Make a new password for " + username + "? The old one stops working.")) return;
+    try {
+      const r = await api("POST", "/users/" + encodeURIComponent(username) + "/reset");
+      showSecret(r.username, r.password);
+      await load();
+    } catch (e) {
+      $("newErr").textContent = e.message;
+    }
+  }
+
+  async function setActive(username, active) {
+    try {
+      await api("POST", "/users/" + encodeURIComponent(username) + "/active", { active });
+      await load();
+    } catch (e) {
+      $("newErr").textContent = e.message;
+    }
+  }
+
+  if (session) start(); else $("loginBox").style.display = "block";
+</script>
+</body>
+</html>

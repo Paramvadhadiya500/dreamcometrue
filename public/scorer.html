@@ -22,6 +22,8 @@
   #wktBtn { width: 92%; background: #f99; font-size: 24px; padding: 14px; }
   .small { font-size: 15px; padding: 10px; }
   .hint { color: #630; min-height: 22px; padding: 0 12px; }
+  button.names { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vs { font-size: 18px; font-weight: bold; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -42,10 +44,12 @@
     <h2 id="name"></h2>
 
     <div id="ttView" style="display:none">
+      <div class="vs" id="ttNames"></div>
       <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
       <h2><span id="pA">0</span> - <span id="pB">0</span></h2>
     </div>
     <div id="simpleView" style="display:none">
+      <div class="vs" id="simpleNames"></div>
       <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
     </div>
     <div id="crView" style="display:none">
@@ -63,16 +67,16 @@
   </div>
 
   <div id="ttControls" style="display:none">
-    <button class="big" onclick="act('point','A',1)">+1 Team A</button>
-    <button class="big" onclick="act('point','B',1)">+1 Team B</button>
+    <button class="big names" id="ttA" onclick="act('point','A',1)">+1 Team A</button>
+    <button class="big names" id="ttB" onclick="act('point','B',1)">+1 Team B</button>
   </div>
 
   <div id="simpleControls" class="grid" style="display:none">
     <div>
-      <button onclick="act('point','A',1)">A +1</button><button onclick="act('point','A',2)">A +2</button><button onclick="act('point','A',3)">A +3</button>
+      <button id="sA1" class="names" onclick="act('point','A',1)">A +1</button><button id="sA2" class="names" onclick="act('point','A',2)">A +2</button><button id="sA3" class="names" onclick="act('point','A',3)">A +3</button>
     </div>
     <div>
-      <button onclick="act('point','B',1)">B +1</button><button onclick="act('point','B',2)">B +2</button><button onclick="act('point','B',3)">B +3</button>
+      <button id="sB1" class="names" onclick="act('point','B',1)">B +1</button><button id="sB2" class="names" onclick="act('point','B',2)">B +2</button><button id="sB3" class="names" onclick="act('point','B',3)">B +3</button>
     </div>
     <button id="finish" onclick="finishMatch()">FINISH MATCH</button>
   </div>
@@ -132,7 +136,35 @@
     }
   }
 
+  // asks the server which matches this scorer has now, so a new assignment shows up without logging in again
+  let refreshTimer = null;
+  async function refreshMatches() {
+    if (!session) return;
+    try {
+      const r = await fetch("/api/my-matches", { headers: { Authorization: "Bearer " + session.token } });
+      if (r.status === 401) { logout(); $("loginErr").textContent = "Session expired. Please log in again."; return; }
+      if (!r.ok) return;
+      const list = await r.json();
+      const keep = sel.value;
+      const same = list.length === sel.options.length && list.every((m, i) => sel.options[i].value === m.id && sel.options[i].textContent === m.name);
+      if (same) return;
+      session.matches = list;
+      localStorage.setItem(SKEY, JSON.stringify(session));
+      sel.innerHTML = "";
+      for (const m of list) {
+        const o = document.createElement("option");
+        o.value = m.id;
+        o.textContent = m.name;
+        sel.appendChild(o);
+      }
+      if (list.some((m) => m.id === keep)) { sel.value = keep; return; }
+      if (sel.onchange) sel.onchange();                  // the selected match is gone: show the first one
+      if (list.length === 0) $("name").textContent = "No matches assigned to you yet";
+    } catch (e) { /* offline: keep the list we have */ }
+  }
+
   function logout() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
     localStorage.removeItem(SKEY);
     session = null;
     if (socket) { socket.disconnect(); socket = null; }
@@ -272,7 +304,7 @@
   function showCricket(s) {
     const ci = s.innings[s.inning - 1];
     const first = s.innings[0];
-    $("crBig").textContent = "Team " + ci.battingTeam + " " + ci.runs + "/" + ci.wickets;
+    $("crBig").textContent = teamName(s, ci.battingTeam) + " " + ci.runs + "/" + ci.wickets;
     $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
 
     let chase = "";
@@ -282,7 +314,7 @@
     }
     $("crChase").textContent = chase;
     $("crFirst").textContent = s.inning === 2
-      ? "Team " + first.battingTeam + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
+      ? teamName(s, first.battingTeam) + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
       : "";
     $("crOver").textContent = ci.recent.join("  ");
     $("crFree").style.display = s.freeHit ? "block" : "none";
@@ -301,10 +333,13 @@
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
 
+  const teamName = (s, t) => (t === "A" ? s.teamA : s.teamB) || "Team " + t;
+  const shortName = (name) => (name.length > 14 ? name.slice(0, 13) + "\u2026" : name);
+
   function statusText(s) {
     if (s.status !== "finished") return "LIVE";
     if (s.resultText) return "FINISHED. " + s.resultText;
-    return "FINISHED. " + (s.winner === "draw" ? "Draw" : "Winner: Team " + s.winner);
+    return "FINISHED. " + (s.winner === "draw" ? "Draw" : teamName(s, s.winner) + " won");
   }
 
   function showState(s) {
@@ -321,7 +356,12 @@
     $("crControls").style.display = isCR && s.status !== "finished" ? "block" : "none";
     $("undoRow").style.display = "block";
 
+    const nameA = teamName(s, "A");
+    const nameB = teamName(s, "B");
     if (isTT) {
+      $("ttNames").textContent = nameA + " vs " + nameB;
+      $("ttA").textContent = "+1 " + shortName(nameA);
+      $("ttB").textContent = "+1 " + shortName(nameB);
       $("gA").textContent = s.gamesA;
       $("gB").textContent = s.gamesB;
       $("pA").textContent = s.pointsA;
@@ -329,6 +369,11 @@
     } else if (isCR) {
       showCricket(s);
     } else {
+      $("simpleNames").textContent = nameA + " vs " + nameB;
+      for (const n of [1, 2, 3]) {
+        $("sA" + n).textContent = shortName(nameA) + " +" + n;
+        $("sB" + n).textContent = shortName(nameB) + " +" + n;
+      }
       $("sA").textContent = s.scoreA;
       $("sB").textContent = s.scoreB;
     }
@@ -373,6 +418,9 @@
       showState(s);
     });
     render();
+    refreshMatches();
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = setInterval(refreshMatches, 30000);
   }
 
   sel.onchange = () => {

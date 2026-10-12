@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 0 12px 24px; }
+  #conn { display: none; background: #c33; color: white; padding: 10px; text-align: center; font-weight: bold; margin: 0 -12px 8px; }
+  a.back { display: inline-block; margin: 12px 0 4px; color: #1f3a5f; text-decoration: none; font-size: 16px; }
+  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; }
+  .free { display: inline-block; background: #fc0; padding: 4px 10px; font-weight: bold; border-radius: 4px; }
+  .small { color: #555; }
+  .vs { font-size: 20px; font-weight: bold; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div id="conn">Reconnecting... the score below may be out of date</div>
+<a class="back" href="/">&larr; All matches</a>
+
+<h2 id="name" style="margin:4px 0">Loading...</h2>
+<div id="meta" class="small"></div>
+
+<div id="tt" style="display:none">
+  <div class="vs" id="ttVs"></div>
+  <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+  <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
+  <p id="history"></p>
+</div>
+
+<div id="simple" style="display:none">
+  <div class="vs" id="sVs"></div>
+  <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
+</div>
+
+<div id="cricket" style="display:none">
+  <h1 id="crBig"></h1>
+  <h3 id="crOvers"></h3>
+  <p id="crChase"></p>
+  <p id="crFirst"></p>
+  <p id="crOver" class="over"></p>
+  <p id="crFree" class="free" style="display:none">FREE HIT</p>
+  <p id="crExtras" class="small"></p>
+</div>
+
+<p id="status"></p>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const matchId = new URLSearchParams(location.search).get("id");
+  if (!matchId) location.replace("/");
+
+  const socket = io();
+  let latest = 0;                          // newest version seen for this match
+
+  const teamName = (s, t) => (t === "A" ? s.teamA : s.teamB) || "Team " + t;
+
+  function join() { if (matchId) socket.emit("join-match", matchId); }
+  socket.on("connect", () => { $("conn").style.display = "none"; join(); });
+  socket.on("disconnect", () => { $("conn").style.display = "block"; });
+
+  function statusText(s) {
+    if (s.status !== "finished") return "LIVE";
+    if (s.resultText) return "FINISHED. " + s.resultText;
+    if (s.winner === "draw") return "FINISHED. Draw";
+    return "FINISHED. " + teamName(s, s.winner) + " won";
+  }
+
+  function showCricket(s) {
+    const ci = s.innings[s.inning - 1];
+    const first = s.innings[0];
+    $("crBig").textContent = teamName(s, ci.battingTeam) + " " + ci.runs + "/" + ci.wickets;
+    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
+
+    let chase = "";
+    if (s.inning === 2 && s.status !== "finished") {
+      chase = "Target " + s.target + ". Need " + s.need + " from " + s.ballsLeft + " balls";
+      if (s.requiredRate !== null) chase += " (required rate " + s.requiredRate.toFixed(2) + ")";
+    }
+    $("crChase").textContent = chase;
+
+    $("crFirst").textContent = s.inning === 2
+      ? teamName(s, first.battingTeam) + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
+      : "";
+
+    $("crOver").textContent = ci.recent.join("  ");
+    $("crFree").style.display = s.freeHit ? "inline-block" : "none";
+    $("crExtras").textContent = "Extras: " + ci.extras.total +
+      " (wides " + ci.extras.wides + ", no balls " + ci.extras.noBalls +
+      ", byes " + ci.extras.byes + ", leg byes " + ci.extras.legByes + ")";
+  }
+
+  socket.on("score:update", (s) => {
+    if (s.matchId !== matchId) return;
+    if (s.version < latest) return;        // old news, ignore
+    latest = s.version;
+
+    $("name").textContent = s.name;
+    document.title = s.name;
+    const isTT = s.sport === "table_tennis";
+    const isCR = s.sport === "cricket";
+    $("tt").style.display = isTT ? "block" : "none";
+    $("cricket").style.display = isCR ? "block" : "none";
+    $("simple").style.display = !isTT && !isCR ? "block" : "none";
+
+    if (isTT) {
+      $("ttVs").textContent = teamName(s, "A") + " vs " + teamName(s, "B");
+      $("gA").textContent = s.gamesA;
+      $("gB").textContent = s.gamesB;
+      $("pA").textContent = s.pointsA;
+      $("pB").textContent = s.pointsB;
+      $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
+    } else if (isCR) {
+      showCricket(s);
+    } else {
+      $("sVs").textContent = teamName(s, "A") + " vs " + teamName(s, "B");
+      $("sA").textContent = s.scoreA;
+      $("sB").textContent = s.scoreB;
+    }
+    $("status").textContent = statusText(s);
+  });
+
+  // place, time and competition
+  async function loadMeta() {
+    if (!matchId) return;
+    try {
+      const r = await fetch("/api/match/" + encodeURIComponent(matchId));
+      if (r.status === 404) { $("name").textContent = "Match not found"; return; }
+      const m = await r.json();
+      const parts = [m.competition];
+      if (m.stage === "knockout") parts.push("Knockout");
+      if (m.venue) parts.push(m.venue);
+      if (m.startTime) parts.push(new Date(m.startTime).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+      $("meta").textContent = parts.join(" \u00b7 ");
+    } catch (e) { /* the score still works without this line */ }
+  }
+  loadMeta();
+</script>
+</body>
+</html>

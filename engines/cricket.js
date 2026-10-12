@@ -280,4 +280,33 @@ function clean(action) {
   return p.error ? null : p.ball;
 }
 
-module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall };
+// Facts for the points table. Runs and balls are per TEAM (A or B), not per innings.
+// A team that was all out counts as having faced its full quota of overs (net run rate rule).
+function result(state) {
+  const finished = state.status === "finished";
+  const byTeam = {};
+  for (const inn of state.innings) byTeam[inn.battingTeam] = inn;
+  const full = state.maxOvers * 6;
+  const balls = (inn) => (inn.endReason === "all out" ? full : inn.legalBalls);
+  return {
+    finished,
+    winner: state.winner === "tie" ? "draw" : state.winner,
+    noResult: finished && state.winner === null,
+    forA: byTeam.A.runs,
+    forB: byTeam.B.runs,
+    ballsA: balls(byTeam.A),
+    ballsB: balls(byTeam.B),
+  };
+}
+
+// One line for the match lists. names = { A: "...", B: "..." }
+function headline(state, names) {
+  const cur = state.innings[state.inning - 1];
+  const part = (inn) => names[inn.battingTeam] + " " + inn.runs + "/" + inn.wickets;
+  if (state.inning === 1) return part(cur) + " (" + cur.overs + " ov)";
+  let text = part(state.innings[0]) + ", " + part(cur) + " (" + cur.overs + " ov)";
+  if (state.status !== "finished" && state.need !== null) text += ", need " + state.need + " from " + state.ballsLeft + " balls";
+  return text;
+}
+
+module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall, result, headline };
