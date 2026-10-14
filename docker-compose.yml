@@ -7,6 +7,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgres://livescore:${DB_PASSWORD}@db:5432/livescore
       REDIS_URL: redis://redis:6379
+      TRUST_PROXY: 1          # Caddy sits in front: use the visitor address it passes on
     depends_on:
       - db
       - redis
@@ -32,7 +33,8 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: "${DOMAIN:-:80}"                    # empty means plain HTTP on port 80
+      ACME_PROFILE: "${ACME_PROFILE:-classic}"    # use "shortlived" when DOMAIN is an IP address
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data

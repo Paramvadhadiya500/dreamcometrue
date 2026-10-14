@@ -11,6 +11,7 @@ const { getEngine } = require("./engines");
 const { createHome } = require("./home");
 const { competitionOf } = require("./standings");
 const { createAdminRouter } = require("./admin");
+const { FailureLimiter } = require("./rateLimit");
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
 const PORT = process.env.PORT || 3000;
@@ -18,10 +19,15 @@ const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
 
 const app = express();
-app.use(express.json());
+app.disable("x-powered-by");
+// Behind Caddy the real visitor address is in X-Forwarded-For. TRUST_PROXY=1 means "one proxy (Caddy) sits in front".
+// Leave it unset when running without a proxy, otherwise a visitor could fake their address.
+const proxyHops = Number.parseInt(process.env.TRUST_PROXY || "0", 10);
+if (proxyHops > 0) app.set("trust proxy", proxyHops);
+app.use(express.json({ limit: "20kb" }));
 app.use(express.static("public"));
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+const io = new Server(httpServer, { maxHttpBufferSize: 10000 });   // no message from a phone needs more than 10 KB
 
 // ---------- Redis: one client for the score cache, two for the Socket.IO adapter ----------
 const cache = createClient({ url: REDIS_URL, disableOfflineQueue: true }); // fail fast if Redis is down
@@ -216,21 +222,36 @@ async function listMatchesFor(username, role) {
   return r.rows;
 }
 
-// ---------- login ----------
+// ---------- login (with limits on failed attempts) ----------
+// 5 wrong passwords for one username from one address, or 40 wrong attempts from one address, block that address for 10 minutes.
+const loginByUser = new FailureLimiter({ windowMs: 10 * 60 * 1000, max: 5 });
+const loginByAddress = new FailureLimiter({ windowMs: 10 * 60 * 1000, max: 40 });
+
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body || {};
-    if (typeof username !== "string" || typeof password !== "string") {
-      return res.status(401).json({ error: "wrong username or password" });
+    const address = req.ip || "unknown";
+    const userKey = address + "|" + (typeof username === "string" ? username.toLowerCase().slice(0, 40) : "");
+
+    const wait = Math.max(loginByAddress.blockedFor(address), loginByUser.blockedFor(userKey));
+    if (wait > 0) {
+      res.set("Retry-After", String(Math.ceil(wait / 1000)));
+      return res.status(429).json({ error: "too many failed attempts. Try again in " + Math.ceil(wait / 60000) + " minute(s)" });
     }
+    const failed = () => {
+      loginByAddress.fail(address);
+      loginByUser.fail(userKey);
+      return res.status(401).json({ error: "wrong username or password" });
+    };
+
+    if (typeof username !== "string" || typeof password !== "string") return failed();
     const r = await pool.query(
       "SELECT username, password_hash, role, active FROM users WHERE username = $1", [username]
     );
     const u = r.rows[0];
     const ok = await bcrypt.compare(password, u ? u.password_hash : DUMMY_HASH);
-    if (!u || !u.active || !ok) {
-      return res.status(401).json({ error: "wrong username or password" });
-    }
+    if (!u || !u.active || !ok) return failed();
+    loginByUser.reset(userKey);                           // a good login clears the count for this user
     const matches = await listMatchesFor(u.username, u.role);
     const token = jwt.sign({ username: u.username }, JWT_SECRET, { expiresIn: "12h" });
     res.json({ token, username: u.username, role: u.role, matches });
@@ -379,9 +400,19 @@ io.use(async (socket, next) => {
 });
 
 // ---------- socket events ----------
+// one connection may join a match at most 30 times in 10 seconds (a normal page does it once or twice)
+function allowJoin(socket) {
+  const now = Date.now();
+  const times = socket.data.joins || (socket.data.joins = []);
+  while (times.length && times[0] <= now - 10000) times.shift();
+  if (times.length >= 30) return false;
+  times.push(now);
+  return true;
+}
+
 io.on("connection", (socket) => {
   socket.on("join-match", async (matchId) => {
-    if (typeof matchId !== "string") return;
+    if (typeof matchId !== "string" || !allowJoin(socket)) return;
     try {
       for (const room of [...socket.rooms]) {
         if (room !== socket.id) socket.leave(room);

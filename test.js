@@ -359,4 +359,136 @@ assert.ok(finishedGames > 300, "most random games reach a result (got " + finish
 assert.ok(validBalls > 5000 && rejectedBalls > 100, "the random test used both valid and invalid actions");
 
 
+
+// ======================= Lesson 11: results, headlines, points table =======================
+const { buildStandings, competitionOf, POINTS } = require("./standings");
+const names = { A: "CSE", B: "ECE" };
+
+// ---- result() and headline() of every sport ----
+const ttEngine = getEngine("table_tennis");
+let ttState = ttEngine.compute(pts(11, 0), { best_of: 3 });
+assert.strictEqual(ttEngine.headline(ttState, names), "CSE 1-0 ECE (0-0 in this game)");
+ttState = ttEngine.compute([...pts(11, 0), ...pts(11, 0)], { best_of: 3 });
+assert.deepStrictEqual(ttEngine.result(ttState), { finished: true, winner: "A", forA: 2, forB: 0 });
+assert.strictEqual(ttEngine.headline(ttState, names), "CSE 2-0 ECE");
+assert.strictEqual(ttEngine.result(ttEngine.compute(pts(3, 1), {})).finished, false);
+
+const sEngine = getEngine("simple");
+let sState = sEngine.compute([sp("A", 2), sp("B", 3), { type: "finish" }]);
+assert.strictEqual(sEngine.headline(sState, names), "CSE 2 - 3 ECE");
+assert.deepStrictEqual(sEngine.result(sState), { finished: true, winner: "B", forA: 2, forB: 3 });
+assert.strictEqual(sEngine.result(sEngine.compute([sp("A", 2)])).winner, null);
+assert.strictEqual(sEngine.result(sEngine.compute([sp("A", 2), sp("B", 2), { type: "finish" }])).winner, "draw");
+
+// cricket: team B bats first here, so results must still be per TEAM, not per innings
+const crB = (events) => cricket.compute(effectivePoints(events), { config: { overs: 2, players: 4, firstBatting: "B", freeHit: true } });
+let cs = crB([ball(6), ball(4), endInn, ball(6), ball(4), ball(1)]);       // B 10, A chases and reaches 11
+assert.deepStrictEqual(cricket.result(cs), { finished: true, winner: "A", noResult: false, forA: 11, forB: 10, ballsA: 3, ballsB: 2 });
+assert.strictEqual(cricket.headline(cs, names), "ECE 10/0, CSE 11/0 (0.3 ov)");
+cs = crB([ball(6), ball(4), endInn, ball(2)]);
+assert.strictEqual(cricket.headline(cs, names), "ECE 10/0, CSE 2/0 (0.1 ov), need 9 from 11 balls");
+cs = crB([ball(3)]);
+assert.strictEqual(cricket.headline(cs, names), "ECE 3/0 (0.1 ov)");
+cs = crB([ball(0, null, "bowled"), ball(0, null, "bowled"), ball(0, null, "bowled"), ball(5), endInn]);   // B all out for 0
+let rr = cricket.result(crB([ball(0, null, "bowled"), ball(0, null, "bowled"), ball(0, null, "bowled"), ball(5), ball(1)]));
+assert.strictEqual(rr.ballsB, 12);                                           // all out = full 2 overs counted
+assert.strictEqual(rr.winner, "A");
+rr = cricket.result(crB([ball(2), abandon]));
+assert.strictEqual(rr.noResult, true);
+assert.strictEqual(rr.winner, null);
+rr = cricket.result(crB([ball(4), endInn, ...balls(11, 0), ball(4)]));       // 4 v 4 after the full 2 overs (12 balls): tie
+assert.strictEqual(rr.winner, "draw");
+assert.strictEqual(rr.noResult, false);
+
+// ---- competition names ----
+assert.strictEqual(competitionOf({ competition: "", sport: "cricket" }), "Cricket");
+assert.strictEqual(competitionOf({ competition: "  Boys   Cricket ", sport: "cricket" }), "Boys Cricket");
+assert.strictEqual(competitionOf({ competition: "", sport: "simple" }), "Other");
+assert.deepStrictEqual(POINTS, { win: 2, draw: 1, loss: 0 });
+
+// ---- points table: cricket with net run rate ----
+const done = (o) => ({ stage: "group", competition: "Cricket", sport: "cricket", ...o });
+const crMatches = [
+  done({ teamA: "CSE", teamB: "ECE", result: { finished: true, winner: "A", forA: 150, forB: 140, ballsA: 120, ballsB: 120 } }),
+  done({ teamA: "ME", teamB: "CSE", result: { finished: true, winner: "B", forA: 100, forB: 101, ballsA: 120, ballsB: 90 } }),
+  done({ teamA: "ECE", teamB: "CE", result: { finished: true, winner: "draw", forA: 120, forB: 120, ballsA: 120, ballsB: 120 } }),
+  done({ teamA: "CE", teamB: "ME", result: { finished: true, winner: null, noResult: true, forA: 5, forB: 0, ballsA: 6, ballsB: 0 } }),
+  done({ teamA: "CSE", teamB: "CE", result: null }),                                       // not started: ignored
+  done({ teamA: "CSE", teamB: "CE", result: { finished: false, winner: null } }),           // live: ignored
+  done({ teamA: "CSE", teamB: "ME", stage: "knockout", result: { finished: true, winner: "A", forA: 9, forB: 1, ballsA: 6, ballsB: 6 } }),  // knockout: ignored
+  done({ teamA: "", teamB: "", result: { finished: true, winner: "A", forA: 9, forB: 1, ballsA: 6, ballsB: 6 } }),                          // no team names: ignored
+  done({ teamA: "CSE", teamB: " cse ", result: { finished: true, winner: "A", forA: 9, forB: 1, ballsA: 6, ballsB: 6 } }),                  // same team twice: ignored
+];
+let table = buildStandings(crMatches);
+assert.strictEqual(table.length, 1);
+assert.strictEqual(table[0].name, "Cricket");
+assert.strictEqual(table[0].hasNrr, true);
+assert.deepStrictEqual(table[0].rows.map((r) => r.team), ["CSE", "CE", "ECE", "ME"]);
+assert.deepStrictEqual(table[0].rows.map((r) => r.points), [4, 2, 1, 1]);
+const byTeam = Object.fromEntries(table[0].rows.map((r) => [r.team, r]));
+assert.deepStrictEqual([byTeam.CSE.played, byTeam.CSE.won, byTeam.CSE.drawn, byTeam.CSE.lost], [2, 2, 0, 0]);
+assert.deepStrictEqual([byTeam.CE.played, byTeam.CE.won, byTeam.CE.drawn, byTeam.CE.lost], [2, 0, 2, 0]);
+assert.deepStrictEqual([byTeam.ME.played, byTeam.ME.won, byTeam.ME.drawn, byTeam.ME.lost], [2, 0, 1, 1]);
+assert.strictEqual(byTeam.CSE.nrr, 1.171);        // 251 in 210 balls minus 240 in 240 balls
+assert.strictEqual(byTeam.ECE.nrr, -0.25);
+assert.strictEqual(byTeam.ME.nrr, -1.733);        // the abandoned match does not count
+assert.strictEqual(byTeam.CE.nrr, 0);
+assert.strictEqual(byTeam.CSE.diff, 251 - 240);
+
+// team names are matched without caring about capital letters or extra spaces
+table = buildStandings([
+  { stage: "group", competition: "", sport: "simple", teamA: "CSE", teamB: "ECE", result: { finished: true, winner: "A", forA: 30, forB: 20 } },
+  { stage: "group", competition: "", sport: "simple", teamA: " cse", teamB: "ME", result: { finished: true, winner: "draw", forA: 25, forB: 25 } },
+  { stage: "group", competition: "", sport: "simple", teamA: "ECE", teamB: "ME", result: { finished: true, winner: "B", forA: 10, forB: 12 } },
+]);
+assert.strictEqual(table[0].name, "Other");
+assert.strictEqual(table[0].hasNrr, false);
+assert.strictEqual(table[0].rows[0].nrr, null);
+assert.deepStrictEqual(table[0].rows.map((r) => [r.team, r.points, r.diff]), [["CSE", 3, 10], ["ME", 3, 2], ["ECE", 0, -12]]);
+
+// equal points and wins: the score difference decides, then the name
+table = buildStandings([
+  { stage: "group", competition: "TT", sport: "table_tennis", teamA: "B", teamB: "A", result: { finished: true, winner: "draw", forA: 1, forB: 1 } },
+  { stage: "group", competition: "TT", sport: "table_tennis", teamA: "C", teamB: "D", result: { finished: true, winner: "draw", forA: 2, forB: 0 } },
+]);
+assert.deepStrictEqual(table[0].rows.map((r) => r.team), ["C", "A", "B", "D"]);
+
+// several competitions come out in name order; nothing finished gives an empty list
+table = buildStandings([
+  { stage: "group", competition: "Zed", sport: "simple", teamA: "X", teamB: "Y", result: { finished: true, winner: "A", forA: 1, forB: 0 } },
+  { stage: "group", competition: "Alpha", sport: "simple", teamA: "X", teamB: "Y", result: { finished: true, winner: "A", forA: 1, forB: 0 } },
+]);
+assert.deepStrictEqual(table.map((t) => t.name), ["Alpha", "Zed"]);
+assert.deepStrictEqual(buildStandings([]), []);
+assert.deepStrictEqual(buildStandings([{ stage: "group", competition: "X", sport: "simple", teamA: "A", teamB: "B", result: null }]), []);
+
+
+// ======================= Lesson 12: failed-login limiter =======================
+const { FailureLimiter } = require("./rateLimit");
+{
+  const MIN = 60 * 1000;
+  const lim = new FailureLimiter({ windowMs: 10 * MIN, max: 3, autoPrune: false });
+  const t0 = 1_000_000;
+  assert.strictEqual(lim.blockedFor("a", t0), 0);                        // nobody is blocked at the start
+  lim.fail("a", t0); lim.fail("a", t0 + 1000);
+  assert.strictEqual(lim.blockedFor("a", t0 + 2000), 0);                 // 2 failures: still allowed
+  lim.fail("a", t0 + 2000);
+  assert.strictEqual(lim.blockedFor("a", t0 + 3000), 10 * MIN - 3000);   // 3 failures: blocked until the first one is 10 minutes old
+  assert.strictEqual(lim.blockedFor("b", t0 + 3000), 0);                 // other keys are not affected
+  assert.strictEqual(lim.blockedFor("a", t0 + 10 * MIN - 1), 1);
+  assert.strictEqual(lim.blockedFor("a", t0 + 10 * MIN), 0);             // the first failure aged out: allowed again
+  lim.fail("a", t0 + 10 * MIN + 5);                                      // the window slides: 3 failures are 2 recent + 1 new
+  assert.ok(lim.blockedFor("a", t0 + 10 * MIN + 6) > 0);
+  lim.reset("a");
+  assert.strictEqual(lim.blockedFor("a", t0 + 10 * MIN + 7), 0);         // a good login clears the count
+  for (let i = 0; i < 50; i++) lim.fail("many", t0 + i);                 // far more failures than the limit
+  assert.ok(lim.map.get("many").length <= 3, "only the last few times are kept");
+  assert.strictEqual(lim.blockedFor("many", t0 + 100), 10 * MIN - 53);   // blocked until the 3rd-last failure (at t0+47) is 10 minutes old
+  lim.prune(t0 + 30 * MIN);
+  assert.strictEqual(lim.map.size, 0, "old entries are removed");
+  const small = new FailureLimiter({ windowMs: MIN, max: 1, maxKeys: 5, autoPrune: false });
+  for (let i = 0; i < 20; i++) small.fail("k" + i, t0);
+  assert.ok(small.map.size <= 5, "the number of remembered keys is capped");
+}
+
 console.log("All tests passed");

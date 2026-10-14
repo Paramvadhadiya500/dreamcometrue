@@ -1,4 +1,22 @@
-   :80 {
-   	encode gzip
-   	reverse_proxy app:3000
-   }
+{
+	# Which certificate "profile" to ask Let's Encrypt for.
+	#   classic     = normal 90-day certificate, for a domain name (default)
+	#   shortlived  = 6-day certificate, REQUIRED when the site address is a bare IP address
+	cert_issuer acme {
+		profile {$ACME_PROFILE:classic}
+	}
+}
+
+# DOMAIN is the address of the site: a domain name, an IP address, or ":80" for plain HTTP (testing only).
+{$DOMAIN} {
+	encode gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		Strict-Transport-Security "max-age=86400"
+	}
+
+	reverse_proxy app:3000
+}
