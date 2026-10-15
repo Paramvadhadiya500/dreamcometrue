@@ -107,7 +107,7 @@ No `FAIL` lines allowed. Read every `WARN` and decide.
 
 | Option | `.env` lines | Good for | Notes |
 |---|---|---|---|
-| **A. Bare IP address** | `DOMAIN=52.66.126.144` and `ACME_PROFILE=shortlived` | Now, with no domain | Let's Encrypt began issuing certificates for IP addresses in 2026. They are valid only about 6 days and Caddy renews them automatically. Students open `https://52.66.126.144`. **Not tested against Let's Encrypt in this course**: see 4.5 if it fails. |
+| **A. Bare IP address** | `DOMAIN=52.66.126.144` and `ACME_PROFILE=shortlived` | Now, with no domain | Let's Encrypt began issuing certificates for IP addresses in 2026. They are valid only about 6 days and Caddy renews them automatically. Students open `https://52.66.126.144`. **Confirmed on the real server (13 Oct 2026): the certificate was issued.** The first try showed that Caddy also needs `default_sni` (now in the Caddyfile), see 4.5. |
 | **B. Domain or college subdomain** | `DOMAIN=score.yourcollege.ac.in` and `ACME_PROFILE=classic` | The real event | Best choice: students trust and remember a name. Ask college IT for an A record that points to your Elastic IP. |
 | **C. sslip.io name** | `DOMAIN=52.66.126.144.sslip.io` and `ACME_PROFILE=classic` | Fallback if A fails | A free service that turns the IP into a name. Depends on a third party. |
 | **Plain HTTP** | `DOMAIN=` (empty) or `DOMAIN=:80` | Rollback, testing | Passwords are not encrypted. |
@@ -132,11 +132,14 @@ Do this at a quiet time. If the certificate is not issued, browsers will show an
 ### 4.5 If it does not work
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| Browser says `ERR_SSL_PROTOCOL_ERROR` ("sent an invalid response"), and `security-check.sh` says code 000, although the Caddy log says `certificate obtained successfully` | **The Caddyfile has no `default_sni` line.** A browser sends no server name when you open an IP address, and on AWS the server only knows its private IP, so Caddy cannot choose the certificate | Use the Caddyfile from Lesson 12 (it has `default_sni {$DOMAIN}` at the top), `git pull`, then `docker compose restart caddy`. The certificate is kept, nothing is requested again |
 | Browser says the connection is not private or cannot connect | Certificate not issued yet | `docker compose logs --tail 50 caddy` and read the error |
 | Log says it cannot reach the server for validation | Port 80 or 443 closed | AWS Security Group: allow 80 and 443 from anywhere |
 | Log mentions `profile` or the setting is not accepted | Old Caddy | `docker compose pull caddy && docker compose up -d caddy`, then `caddy version` |
 | Log says too many certificates / rate limit | You recreated the certificate many times | Wait (Let's Encrypt limits repeats for the same address); use option C or plain HTTP meanwhile; never delete the `caddy_data` volume |
 | IP certificate refused for any reason | The IP certificate path is new | Use option B or C |
+
+**Changing the Caddyfile later:** the file is mounted into the container, so run `docker compose restart caddy` after a change (`docker compose up -d` alone does not notice it). Never delete the `caddy_data` volume: it holds the certificate.
 
 ### 4.6 Rollback to plain HTTP (always know this) [server]
 ```bash
@@ -360,11 +363,12 @@ Never run `docker compose down -v` (it deletes the database).
 - The server with a real database and Redis: 118 checks (admin, scoring, home page, points table) and 29 checks for login limits, request limits and join limits.
 - The four pages in a simulated browser: 60 checks, plus 34 checks of the cricket scorer.
 - A **real Caddy 2.11.7** in front of the server: security headers, gzip, WebSocket and long-polling, scoring, a forged `X-Forwarded-For` (does not get around the login limit), HTTP to HTTPS redirect, and `wss://` with a local test certificate.
+- The bare-IP failure you found on the real server (`ERR_SSL_PROTOCOL_ERROR`, check code 000) was **reproduced locally** and the `default_sni` fix was tested the same way (the connection fails without it and works with it).
 - The Caddyfile is valid with `DOMAIN` set to an IP address, a domain and `:80`.
 - The weak-password finder against real accounts; the backup scheduler with a pretend `crontab`; the security-check script against a healthy and a broken pretend server; the safe restore drill on a test database.
 
 **NOT tested**
-- A real certificate from Let's Encrypt (no internet access from my test environment). The IP address route uses a newer, thinly documented Caddy setting (`profile shortlived`). That is why the rollback and options B and C exist.
+- The `default_sni` fix on the real server (it was confirmed only on a local reproduction). The certificate itself was issued on your server, but my own test environment cannot reach Let's Encrypt. The rollback and options B and C exist in case something else goes wrong.
 - The Docker build and `docker compose` on your server.
 - Real phones, your Wi-Fi, and the real event load.
 

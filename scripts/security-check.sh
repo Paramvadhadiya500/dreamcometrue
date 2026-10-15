@@ -56,11 +56,15 @@ else
     pass "https://$SITE answers with a certificate your computer trusts"
     BASE="https://$SITE"
   else
-    fail "https://$SITE does not work (code $CODE). See: docker compose logs --tail 30 caddy"
+    fail "https://$SITE does not work (code $CODE). See: docker compose logs --tail 30 caddy and LESSON_12.md section 4.5"
+    BASE=""
   fi
 fi
 
-echo "== headers and login limit (through $BASE) =="
+echo "== headers and login limit (through ${BASE:-nothing: HTTPS is not working}) =="
+if [ -z "$BASE" ]; then
+  warn "header and login-limit checks skipped because HTTPS does not work. Fix HTTPS first"
+else
 HEADERS="$(curl -s -m 10 -D - -o /dev/null "$BASE/health" 2>/dev/null | tr -d '\r')"
 if [ -z "$HEADERS" ]; then
   warn "could not read $BASE/health"
@@ -76,6 +80,7 @@ else
       -d '{"username":"securitycheck-nobody","password":"wrong"}' "$BASE/login" 2>/dev/null)"
   done
   if [ "$LAST" = "429" ]; then pass "6 wrong passwords in a row are blocked (login limit works)"; else warn "login limit did not block the 6th wrong password (code $LAST)"; fi
+fi
 fi
 
 echo "== passwords =="

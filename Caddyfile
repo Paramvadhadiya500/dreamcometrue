@@ -1,4 +1,8 @@
 {
+	# Browsers send no server name when you open https://<IP address>, and on AWS the server only knows
+	# its private IP, so Caddy could not pick the certificate. This tells it which one to use.
+	default_sni {$DOMAIN}
+
 	# Which certificate "profile" to ask Let's Encrypt for.
 	#   classic     = normal 90-day certificate, for a domain name (default)
 	#   shortlived  = 6-day certificate, REQUIRED when the site address is a bare IP address
