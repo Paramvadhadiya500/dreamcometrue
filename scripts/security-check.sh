@@ -10,6 +10,9 @@ warn() { echo "WARN  $1"; WARN=$((WARN + 1)); }
 fail() { echo "FAIL  $1"; FAIL=$((FAIL + 1)); }
 envval() { grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2-; }
 
+
+
+
 echo "== settings file =="
 if [ ! -f .env ]; then
   fail ".env is missing"
