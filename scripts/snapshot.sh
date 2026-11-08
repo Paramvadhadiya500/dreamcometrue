@@ -6,6 +6,12 @@ cd "$(dirname "$0")/.." || exit 1
 q() { docker compose exec -T db psql -U livescore -d livescore -c "$1" 2>&1; }
 
 echo "== time (UTC) =="; date -u
+echo; echo "== server size =="
+TOKEN="$(curl -s -m 2 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' 2>/dev/null)"
+TYPE="$(curl -s -m 2 -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type 2>/dev/null)"
+echo "instance type: ${TYPE:-unknown (not an AWS server, or the lookup was blocked)}"
+echo "cpu cores: $(nproc)"
+free -m | awk 'NR==1||NR==2||/^Swap:/'
 echo; echo "== code version =="
 git log --oneline -5 2>&1
 echo "-- uncommitted changes (should be empty):"; git status --short 2>&1 | head -20
