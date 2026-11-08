@@ -18,9 +18,10 @@ All four run with `docker compose` on one EC2 server.
 1. Launch EC2 as above, attach the Elastic IP (or a new IP).
 2. `sudo apt update && sudo apt install -y docker.io docker-compose-v2 git && sudo usermod -aG docker ubuntu`, then log in again.
 3. `git clone <repo-url> && cd <repo>`
-4. Create `.env`:
+4. Create `.env` (see `.env.example`; DOMAIN is explained in LESSON_12.md):
    ```
    DOMAIN=
+   ACME_PROFILE=classic
    DB_PASSWORD=<openssl rand -hex 16>
    JWT_SECRET=<openssl rand -hex 32>
    ```
@@ -42,6 +43,8 @@ docker compose up -d --build
 Take a backup first when the update changes the database: `./scripts/backup.sh`
 
 ## C. Backups
+- Automatic: `./scripts/install-cron.sh` (hourly) or `./scripts/install-cron.sh daily`; old backups are deleted after 7 days.
+- Safe restore drill (does not touch the live database): see LESSON_12.md, section 8.
 - Manual: `./scripts/backup.sh` (files go to ~/backups on the server)
 - Hourly cron during events (see lesson 8 step 12)
 - Copy backups OFF the server: `scp -i <key>.pem ubuntu@<ip>:~/backups/<file> .`
@@ -58,7 +61,15 @@ Take a backup first when the update changes the database: `./scripts/backup.sh`
 | Cannot SSH | Security group: set SSH to "My IP" again, or use EC2 Instance Connect |
 | Lost .env | Make a new JWT_SECRET (scorers log in again). DB_PASSWORD must match the old database volume, otherwise restore a backup into a new database. |
 
-## E. Reminders
+## E. HTTPS, passwords and checks (Lesson 12)
+- Switch HTTPS on: set `DOMAIN` (and `ACME_PROFILE`) in `.env`, then `docker compose up -d`. Steps, checks and rollback: LESSON_12.md, section 4.
+- Rollback to plain HTTP: `DOMAIN=:80` in `.env`, then `docker compose up -d caddy`.
+- Weak passwords: `docker compose run --rm app node check-passwords.js`
+- Before the event and after every deploy: `./scripts/security-check.sh` (no FAIL allowed).
+- Locked out by the login limit while testing: `docker compose restart app`.
+- Server size and load test (Lesson 13): `./scripts/snapshot.sh` shows the instance type and memory; `./scripts/add-swap.sh` once; `./scripts/watch-load.sh` while testing; resize for event days: LESSON_13.md sections 5 and 7.
+
+## F. Reminders
 - Free plan accounts close when credits or 6 months run out. Check Billing -> Credits.
 - Budget alarm set? Elastic IP released only when the project is finished.
 - `docker compose down -v` DELETES the database. Never use `-v`.

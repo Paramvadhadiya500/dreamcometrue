@@ -303,11 +303,21 @@ async function afterMatchChange(matchId, { removed = false } = {}) {
 app.use("/api/admin", createAdminRouter({ pool, requireAdmin: requireRole("admin"), afterMatchChange }));
 
 // ---------- pages for students ----------
+// sends the ready-made (already compressed) copy, and answers "not changed" when the browser already has it
+function sendPacket(req, res, packet) {
+  res.set({ "Cache-Control": "public, max-age=3", Vary: "Accept-Encoding", ETag: packet.etag, "Content-Type": "application/json; charset=utf-8" });
+  if (req.fresh) return res.status(304).end();
+  if (req.acceptsEncodings("gzip")) {
+    res.set("Content-Encoding", "gzip");
+    return res.send(packet.gzip);
+  }
+  res.send(packet.raw);
+}
+
 app.get("/api/home", async (req, res) => {
   try {
     const data = await home.get();
-    res.set("Cache-Control", "public, max-age=3");
-    res.type("application/json").send(data.homeJson);
+    sendPacket(req, res, data.homePacket);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server error" });
@@ -317,8 +327,7 @@ app.get("/api/home", async (req, res) => {
 app.get("/api/standings", async (req, res) => {
   try {
     const data = await home.get();
-    res.set("Cache-Control", "public, max-age=3");
-    res.type("application/json").send(data.standingsJson);
+    sendPacket(req, res, data.standingsPacket);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server error" });

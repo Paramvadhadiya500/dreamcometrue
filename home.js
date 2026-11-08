@@ -1,6 +1,18 @@
 // Builds the data for the student home page (schedule, live scores, results) and the points tables.
 // The result is cached for 3 seconds, so thousands of students cost one rebuild, not thousands.
+const zlib = require("zlib");
+const crypto = require("crypto");
 const { buildStandings, competitionOf, POINTS } = require("./standings");
+
+// The JSON text, its compressed copy and an ETag are made once per rebuild, not once per student.
+function makePacket(object) {
+  const raw = Buffer.from(JSON.stringify(object));
+  return {
+    raw,
+    gzip: zlib.gzipSync(raw, { level: 6 }),
+    etag: 'W/"' + crypto.createHash("sha1").update(raw).digest("base64url").slice(0, 20) + '"',
+  };
+}
 
 function createHome({ pool, getState, getEngine }) {
   const TTL = 3000;
@@ -66,10 +78,9 @@ function createHome({ pool, getState, getEngine }) {
     );
 
     const competitions = [...new Set(matches.map((m) => m.competition))].sort((a, b) => a.localeCompare(b));
-    const home = { generatedAt: new Date().toISOString(), matches, competitions };
+    const home = { matches, competitions };      // no timestamp inside: the ETag only changes when something changed
     const standings = { points: POINTS, competitions: buildStandings(forStandings) };
-    // the JSON text is made once here, so thousands of requests only send it
-    return { home, standings, homeJson: JSON.stringify(home), standingsJson: JSON.stringify(standings) };
+    return { home, standings, homePacket: makePacket(home), standingsPacket: makePacket(standings) };
   }
 
   function get() {
