@@ -1,6 +1,6 @@
 # PROJECT CONTEXT: College Live Score
 
-Last updated: 2026-10-12, after Lesson 11 (admin panel, student home page, schedule, points table).
+Last updated: 2026-10-16, after Lesson 13 (load test and capacity). Details: LESSON_12.md (HTTPS, security) and LESSON_13.md (capacity, load test).
 Keep the "Status" section current. Never put passwords, tokens or the contents of .env in this file.
 
 ## 1. What this is
@@ -24,12 +24,15 @@ Repo: github.com/Paramvadhadiya500/dreamcometrue (local folder on my laptop is c
   `public/scorer.html` (scorers), `public/admin.html` (admin panel).
 - Database: PostgreSQL 16. Cache and pub/sub: Redis 7.
 - Deploy: Docker Compose on one AWS EC2 server (Ubuntu 24.04, region ap-south-1 Mumbai, Elastic IP, 20 GiB gp3). Caddy is the web server.
-- No domain yet. Caddyfile is `:80 { encode gzip  reverse_proxy app:3000 }` = plain HTTP only (test setup). HTTPS is still to do.
+- No domain. The site address comes from `.env`: `DOMAIN` = a bare IP (with `ACME_PROFILE=shortlived`), a domain (with `ACME_PROFILE=classic`), or empty / `:80` for plain HTTP.
+  Caddy gets and renews the Let's Encrypt certificate by itself. HTTPS is ON only after DOMAIN is set and the check in LESSON_12.md passes. Rollback: `DOMAIN=:80` then `docker compose up -d caddy`.
 
 ## 4. Folder layout
 ```
 server.js            main server (login, sockets, score actions, API routes, wiring)
-home.js              builds /api/home and /api/standings (cached 3 s, JSON text cached too)
+rateLimit.js         counts failed logins per address / per username (sliding 10-minute window)
+check-passwords.js   lists accounts that still use a known or easy password (prints no passwords)
+home.js              builds /api/home and /api/standings (cached 3 s); the JSON, its gzip copy and an ETag are made once per rebuild and sent as they are
 admin.js             admin API router (/api/admin/*): matches, scorers
 standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
@@ -44,8 +47,9 @@ add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>
 add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis [--overs --players --first --freehit --bestof --scorer]
 test.js              unit tests (all rules, a 400-game random cricket test)
 loadtest.js          load test (viewers); scorer login from SCORER_USER / SCORER_PASS
-scripts/backup.sh, restore.sh, snapshot.sh
-Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.md
+loadtest-real.js     realistic traffic simulator (students arrive, browse, watch live, switch match, drop and reconnect; scorers; probes); see LESSON_13.md
+scripts/backup.sh, restore.sh, snapshot.sh, install-cron.sh (automatic backups), security-check.sh (pre-event PASS/WARN/FAIL check), watch-load.sh (live CPU/memory view during a test), add-swap.sh (2 GB swap file)
+Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.md, LESSON_12.md, LESSON_13.md
 ```
 
 ## 5. How scoring works (the core idea)
@@ -62,6 +66,11 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   Redis down -> server falls back to the database. The Redis adapter lets several servers share rooms.
 - The scorer page keeps a queue in localStorage and sends each action with a unique id and an ack; it retries on timeout and drops it only if the server refuses it.
   Known gap: the scorer's own screen does not update while offline.
+- Login protection: 5 wrong passwords for one username from one address, or 40 wrong attempts from one address, block that address for up to 10 minutes
+  (HTTP 429, even for a correct password). A good login clears the username count. Counters are in memory (reset by restarting the app, one server only).
+  `TRUST_PROXY=1` (set in docker-compose) makes the app use the visitor address that Caddy passes on; leave it unset without a proxy.
+- Other limits: one socket connection may join a match 30 times per 10 s; socket messages up to 10 KB; JSON requests up to 20 KB; no X-Powered-By header.
+  Caddy adds X-Content-Type-Options, X-Frame-Options DENY, Referrer-Policy, and Strict-Transport-Security (max-age 86400 for now).
 - Auth: `POST /login` -> JWT (12 h) with only the username. Socket handshake sends the token; students have none. Roles: admin, scorer, student.
   `users.active=false` cuts a lost phone off immediately (checked on every action).
 - HTTP routes: `GET /api/home` and `GET /api/standings` (public, cached 3 s), `GET /api/match/:id` (public, cached 10 s),
@@ -132,14 +141,32 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 6. Matches created with SQL on the laptop did not exist on the server (separate databases).
 7. Placeholder passwords from instructions (like CHOOSE-A-PASSWORD1) were used as real passwords. Set real ones. Admin passwords especially: the admin panel is public on the internet (HTTP).
 8. The image must be rebuilt (`up -d --build`) before `migrate.js` runs, or new files are missing inside the container.
+9. New engine files (`result`, `headline`) were not copied in, so cards had no score line. After copying files, run `node test.js` and check with Select-String.
+10. Switching to HTTPS can lock people out if the certificate is not issued (browsers get an error). Always know the rollback: `DOMAIN=:80`, `docker compose up -d caddy`.
+11. Do not delete the `caddy_data` volume or change DOMAIN over and over: Let's Encrypt limits repeated certificates for the same name or address.
+12. The login limit can lock YOU out while testing (10 minutes). Restart the app (`docker compose restart app`) to clear it.
+13. HTTPS on a bare IP: the certificate was issued, but browsers showed ERR_SSL_PROTOCOL_ERROR because browsers send no server name for an IP and AWS shows the server its private IP. Fix: `default_sni {$DOMAIN}` in the Caddyfile, then `docker compose restart caddy` (a mounted file change is not noticed by `up -d`).
 
 ## 11. Status
-Done: Lessons 1-11: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
+Done: Lessons 1-13: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
 AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen,
-admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page.
+admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page,
+HTTPS settings (IP address or domain certificate through Caddy), login protection, request limits, weak-password finder, automatic backups, security check script.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).
-To do next: football engine; HTTPS + login rate limiting + hardening (Lesson 12/13); full mock event with real scorers on real phones; rehearse a restore.
-Known gaps: HTTP only (admin and scorer passwords travel unencrypted); no login rate limiting; demo/placeholder passwords must be replaced;
-single server (single point of failure); backups are manual (hourly cron not confirmed); cricket limits in section 6;
+To do next: find out the server size (./scripts/snapshot.sh) and run the staged real load test from LESSON_13.md on the real server (500, 2000, 5000, 10000 students) and decide the event-day server size;
+switch HTTPS on and run ./scripts/security-check.sh until it has no FAIL; football engine; full mock event with real scorers on real phones (plan in LESSON_12.md);
+rehearse a restore (safe drill in LESSON_12.md); load test again through HTTPS.
+Known gaps: CAPACITY IS NOT PROVEN ON THE REAL SERVER (only measured on a test machine and calculated): see section 12; HTTPS on the bare IP: the certificate was issued (13 Oct 2026) but the first browser test failed until `default_sni` was added to the Caddyfile; confirm with ./scripts/security-check.sh (no FAIL);
+login limits are per server and per address (many users behind one college address share the address limit); no CSP header; HSTS is only 1 day;
+single server (single point of failure); automatic backups exist only after ./scripts/install-cron.sh is run; backups stay on the same server unless copied off; cricket limits in section 6;
 scorer screen does not update while offline; no team list (names are typed, matched ignoring case); home list refreshes by polling every 10 s;
 a match with scores can only be deleted by typing DELETE (it removes its scores); no admin screen for admin accounts or for changing the points rules (they are constants in standings.js).
+
+## 12. Capacity (Lesson 13; measured on a test machine, calculated, NOT yet proven on the real server)
+- Memory is the limit, not CPU. Caddy costs about 133 KB per live WebSocket student and about 45 KB per browsing student (open HTTPS connection); Node about 9 KB per live student.
+- Memory used ~ fixed (about 730 MB: Node 124 + Caddy 47 + Postgres 150 + Redis 10 + Ubuntu/Docker 400, the last two ASSUMED) + 0.045 MB x browsing students + 0.149 MB x live students. Stay under 85% of (RAM - 100 MB).
+- t3.micro (1 GiB): about 600 to 2,700 simultaneous students (depends on idle memory). t3.small (2 GiB): about 10,000 with 60% browsing / 40% live, but tight (about 82%); not if all watch live. 4 GiB (t3.medium, or free-plan c7i-flex.large): comfortable even if all 10,000 watch live.
+- Normal busy moment is 20 to 40% of the college online (2,000 to 4,000): t3.small is enough.
+- A home page refresh costs about 1 ms CPU and 2.2 KB on the wire; 10,000 students refreshing every 10 s is about 1,000 requests/s (about 1 vCPU) and about 24 GB of data out in 3 hours (free allowance: 100 GB per month).
+- Free plan (accounts created on or after 15 Jul 2025): t3.micro, t3.small, t4g.micro, t4g.small, c7i-flex.large, m7i-flex.large. Older accounts: only t2.micro / t3.micro (bigger types cost about $0.02 to $0.05 per hour).
+- To prove it: LESSON_13.md section 5 (watch-load.sh on the server, loadtest-real.js from a second machine in the same region, staged runs, stop rules).
