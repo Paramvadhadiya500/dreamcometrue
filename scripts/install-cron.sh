@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Installs automatic database backups, and removes backups older than 7 days. Safe to run again.
+# Installs automatic database backups, and removes backups older than 7 days
+# (prune-backups.sh always keeps the newest 3 complete ones). Safe to run again.
 #   ./scripts/install-cron.sh          backup every hour (use during the event)
 #   ./scripts/install-cron.sh daily    backup once a day at 03:00 (use the rest of the year)
 set -euo pipefail
@@ -14,7 +15,7 @@ esac
 
 mkdir -p "$HOME/backups"
 BACKUP_LINE="$WHEN cd $PROJECT && ./scripts/backup.sh >> $HOME/backups/backup.log 2>&1 # livescore-backup"
-PRUNE_LINE="30 4 * * * find $HOME/backups -name 'livescore-*.sql.gz' -mtime +7 -delete # livescore-prune"
+PRUNE_LINE="30 4 * * * cd $PROJECT && ./scripts/prune-backups.sh >> $HOME/backups/backup.log 2>&1 # livescore-prune"
 
 # keep every other line the user already has, replace only our two lines
 CURRENT="$(crontab -l 2>/dev/null || true)"

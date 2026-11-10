@@ -4,6 +4,8 @@
 set -euo pipefail
 FILE="${1:?Usage: ./scripts/restore.sh <backup.sql.gz>}"
 [ -f "$FILE" ] || { echo "File not found: $FILE"; exit 1; }
+# check the file BEFORE deleting anything: a broken backup must never replace the live data
+"$(dirname "$0")/check-backup.sh" "$FILE" || { echo "Refusing to restore: this backup is not complete. Nothing was changed."; exit 1; }
 read -r -p "This DELETES the current database and loads $FILE. Type yes to continue: " ANSWER
 [ "$ANSWER" = "yes" ] || { echo "Cancelled"; exit 1; }
 

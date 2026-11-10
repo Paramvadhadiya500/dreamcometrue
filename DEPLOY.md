@@ -54,12 +54,12 @@ Why this order:
 - `docker compose build` does not stop the running app. The old app keeps working while the database changes (migrations only add things and can run twice). Only the last step, `up -d`, starts the new code, so new code never runs on an old database.
 - Take the backup first. It is cheap, and it is the only way back if a migration goes wrong.
 
-## C. Backups
-- Automatic: `./scripts/install-cron.sh` (hourly) or `./scripts/install-cron.sh daily`; old backups are deleted after 7 days.
-- Restore drill: NOT written yet (LESSON_12.md was deleted). A safe drill script is planned (restores into a scratch database, never the live one).
-- Manual: `./scripts/backup.sh` (files go to ~/backups on the server)
-- Hourly cron during events (see lesson 8 step 12)
-- Copy backups OFF the server: `scp -i <key>.pem ubuntu@<ip>:~/backups/<file> .`
+## C. Backups (full guide: `docs/BACKUPS.md`)
+- Automatic: `./scripts/install-cron.sh` (hourly) or `./scripts/install-cron.sh daily`. Old backups are deleted after 7 days, but the newest 3 complete ones are always kept.
+- Manual: `./scripts/backup.sh` (files go to ~/backups; a file is kept only if it is a complete dump)
+- Check one file: `./scripts/check-backup.sh <file>`
+- Off the server: automatic copy to S3, and an email alert when backups stop (heartbeat). Setup: `docs/BACKUPS.md` sections 3 and 4.
+- Restore drill (safe, never touches live data): `./scripts/restore-drill.sh`
 - EBS snapshot and server image (AMI) in the AWS console before big days
 - Never commit backups to Git (they contain password hashes and all scores)
 

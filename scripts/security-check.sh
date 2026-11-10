@@ -103,8 +103,15 @@ if [ -n "$APPLIED" ] && [ "$APPLIED" = "$FILES" ]; then pass "all $FILES migrati
 else fail "migrations applied: ${APPLIED:-unknown}, migration files: $FILES. Run: docker compose run --rm app node migrate.js"; fi
 
 if crontab -l 2>/dev/null | grep -q 'livescore-backup'; then pass "automatic backups are scheduled"; else warn "no automatic backups. Run: ./scripts/install-cron.sh"; fi
-if [ -n "$(find "$HOME/backups" -name 'livescore-*.sql.gz' -mmin -120 2>/dev/null | head -1)" ]; then pass "a backup was made in the last 2 hours"
-else warn "no backup in the last 2 hours. Run: ./scripts/backup.sh"; fi
+if crontab -l 2>/dev/null | grep -q 'livescore-prune'; then pass "old backups are pruned"; else warn "no prune job. Run: ./scripts/install-cron.sh"; fi
+NEWEST="$(ls -1t "$HOME"/backups/livescore-*.sql.gz 2>/dev/null | head -1)"
+if [ -z "$NEWEST" ]; then warn "no backups found. Run: ./scripts/backup.sh"
+elif ! ./scripts/check-backup.sh "$NEWEST" >/dev/null 2>&1; then fail "newest backup is broken: $(./scripts/check-backup.sh "$NEWEST"). Run ./scripts/backup.sh and read ~/backups/backup.log"
+elif [ -z "$(find "$NEWEST" -mmin -120 2>/dev/null)" ]; then warn "newest backup is older than 2 hours. Run: ./scripts/backup.sh"
+else pass "newest backup is complete and less than 2 hours old"; fi
+CONF="$HOME/.livescore-backup"
+grep -q '^BACKUP_S3_BUCKET=.' "$CONF" 2>/dev/null && pass "backups are copied off the server (S3)" || warn "backups are NOT copied off the server. See docs/BACKUPS.md"
+grep -q '^BACKUP_PING_URL=.' "$CONF" 2>/dev/null && pass "backup heartbeat alert is set" || warn "no backup heartbeat alert. See docs/BACKUPS.md"
 
 echo "== server =="
 USED="$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')"
