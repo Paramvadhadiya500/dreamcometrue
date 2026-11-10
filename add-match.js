@@ -5,11 +5,13 @@
 //   node add-match.js --id kb-2 --name "Kabaddi: G vs H" --sport simple --scorer rahul
 //   node add-match.js --id tt-3 --name "Table Tennis: E vs F" --sport table_tennis --bestof 5 --scorer neha
 //
+//   node add-match.js --id vb-4 --name "Volleyball: C vs D" --sport volleyball --bestof 5 --scorer neha   (--bestof 3 or 5, default 3)
 // Cricket options: --overs (1-50, default 10)  --players (2-11, default 11)
 //                  --first A|B (who bats first, default A)  --freehit true|false (default true)
 const pool = require("./db");
 const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
+const volleyball = require("./engines/volleyball");
 
 function readArgs(list) {
   const out = {};
@@ -36,7 +38,7 @@ async function main() {
 
   if (!a.id || !/^[a-z0-9-]{1,30}$/.test(a.id)) throw new Error("--id is required: lowercase letters, digits and dashes, up to 30 characters");
   if (!a.name || a.name.length > 80) throw new Error("--name is required (up to 80 characters)");
-  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket");
+  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket, volleyball");
 
   let config = {};
   let bestOf = 3;
@@ -54,6 +56,11 @@ async function main() {
       bestOf = toInt(a.bestof, "--bestof");
       if (![1, 3, 5, 7].includes(bestOf)) throw new Error("--bestof must be 1, 3, 5 or 7");
     }
+  } else if (a.sport === "volleyball") {
+    // the number of sets lives in config.bestOf (the best_of column stays 3 and is not used)
+    config = { ...volleyball.normalizeConfig({}), bestOf: a.bestof === undefined ? 3 : toInt(a.bestof, "--bestof") };
+    const problem = volleyball.checkConfig(config);
+    if (problem) throw new Error(problem);
   }
 
   if (a.scorer) {
@@ -71,7 +78,7 @@ async function main() {
     await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [a.scorer, a.id]);
   }
   console.log("Created match", a.id, "(" + a.sport + ")" + (a.scorer ? ", scorer: " + a.scorer : ""));
-  if (a.sport === "cricket") console.log("Settings:", JSON.stringify(config));
+  if (a.sport === "cricket" || a.sport === "volleyball") console.log("Settings:", JSON.stringify(config));
   await pool.end();
 }
 

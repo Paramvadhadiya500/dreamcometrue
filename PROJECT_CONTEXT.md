@@ -37,15 +37,15 @@ admin.js             admin API router (/api/admin/*): matches, scorers
 standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
 engine.js            table tennis rules + effectivePoints() (undo handling)
-engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket
-engines/tableTennis.js, simple.js, cricket.js   (each also has result(state) and headline(state, names))
+engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball
+engines/tableTennis.js, simple.js, cricket.js, volleyball.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
 migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
-add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis [--overs --players --first --freehit --bestof --scorer]
-test.js              unit tests (all rules, a 400-game random cricket test)
+add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball [--overs --players --first --freehit --bestof --scorer]
+test.js              unit tests (all rules, a 400-game random cricket test, a 400-game random volleyball test)
 loadtest.js          load test (viewers); scorer login from SCORER_USER / SCORER_PASS
 loadtest-real.js     realistic traffic simulator (students arrive, browse, watch live, switch match, drop and reconnect; scorers; probes); see LESSON_13.md
 scripts/backup.sh, restore.sh, snapshot.sh, install-cron.sh (automatic backups), security-check.sh (pre-event PASS/WARN/FAIL check), watch-load.sh (live CPU/memory view during a test), add-swap.sh (2 GB swap file)
@@ -95,6 +95,13 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   Bye/legbye: runs >= 1, legal ball. Wicket kinds: bowled, caught, lbw, stumped, runout, hitwicket. Max wickets = players - 1.
   Innings ends: all out, overs complete, target reached, or scorer ends it. Result text: "Team B won by 3 wickets", "... by 5 runs", tie, abandoned.
   NOT supported: player names/stats, super over, rain/DLS, penalty runs, retired batters, byes off a no ball, over-limits per bowler. Team names are "Team A/B".
+- volleyball (settings in matches.config: bestOf 3|5, setPoints 25, decidingPoints 15, winBy 2; the best_of column is NOT used):
+  actions `point{team A|B}` (value missing or 1), `finish{data:{winner A|B}}` (scorer ends the match early and must pick the winner), `undo`.
+  State: setsA/B, pointsA/B, currentSet, isDeciding, target, winBy, bestOf, setsToWin, finishedSets, winner, ended ("normal"|"walkover"), resultText, status.
+  Rules: rally scoring, set to 25 win by 2 (no cap), deciding set (both teams one set from winning) to 15 win by 2. No draws.
+  Points table: forA/forB = sets won (win 2, loss 0, same tie-breaks). A walkover keeps the sets and points as recorded.
+  Admin form edits only "best of 3 or 5" (version 1). The other settings use the defaults. Settings are locked once scoring starts (409).
+  NOT supported: serve/rotation, timeouts, substitutions, cards, libero, player names, points cap, "no result", editable set points in the admin form, 3-2-1-0 table points.
 - State of every sport also has: sport, matchId, name, version, status ("live"|"finished"), winner.
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
@@ -149,7 +156,7 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 
 ## 11. Status
 Done: Lessons 1-13: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
-AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen,
+AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages),
 admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page,
 HTTPS settings (IP address or domain certificate through Caddy), login protection, request limits, weak-password finder, automatic backups, security check script.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).

@@ -45,7 +45,8 @@
 
     <div id="ttView" style="display:none">
       <div class="vs" id="ttNames"></div>
-      <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
+      <h1><span id="gA">0</span> : <span id="gB">0</span> <small id="ttUnit">games</small></h1>
+      <div id="vbInfo" style="display:none"></div>
       <h2><span id="pA">0</span> - <span id="pB">0</span></h2>
     </div>
     <div id="simpleView" style="display:none">
@@ -69,6 +70,10 @@
   <div id="ttControls" style="display:none">
     <button class="big names" id="ttA" onclick="act('point','A',1)">+1 Team A</button>
     <button class="big names" id="ttB" onclick="act('point','B',1)">+1 Team B</button>
+    <div id="vbFinish" style="display:none">
+      <button class="small names" id="vbFinA" onclick="finishVolleyball('A')">Finish: Team A wins</button>
+      <button class="small names" id="vbFinB" onclick="finishVolleyball('B')">Finish: Team B wins</button>
+    </div>
   </div>
 
   <div id="simpleControls" class="grid" style="display:none">
@@ -185,6 +190,14 @@
 
   function finishMatch() {
     if (confirm("Finish this match? You can still press UNDO afterwards.")) act("finish");
+  }
+
+  // volleyball: end the match early (walkover or time limit). The scorer must pick the winner.
+  function finishVolleyball(team) {
+    const name = lastState ? teamName(lastState, team) : "Team " + team;
+    if (confirm("Finish the match and give the win to " + name + "? You can still press UNDO afterwards.")) {
+      act("finish", null, null, { winner: team });
+    }
   }
 
   function flush() {
@@ -346,26 +359,35 @@
     lastState = s;
     $("name").textContent = s.name;
     const isTT = s.sport === "table_tennis";
+    const isVB = s.sport === "volleyball";
     const isCR = s.sport === "cricket";
-    const isSimple = !isTT && !isCR;
-    $("ttView").style.display = isTT ? "block" : "none";
+    const isSimple = !isTT && !isCR && !isVB;
+    $("ttView").style.display = isTT || isVB ? "block" : "none";
     $("simpleView").style.display = isSimple ? "block" : "none";
     $("crView").style.display = isCR ? "block" : "none";
-    $("ttControls").style.display = isTT ? "block" : "none";
+    $("ttControls").style.display = isTT || isVB ? "block" : "none";
     $("simpleControls").style.display = isSimple ? "block" : "none";
     $("crControls").style.display = isCR && s.status !== "finished" ? "block" : "none";
     $("undoRow").style.display = "block";
 
     const nameA = teamName(s, "A");
     const nameB = teamName(s, "B");
-    if (isTT) {
+    if (isTT || isVB) {
       $("ttNames").textContent = nameA + " vs " + nameB;
       $("ttA").textContent = "+1 " + shortName(nameA);
       $("ttB").textContent = "+1 " + shortName(nameB);
-      $("gA").textContent = s.gamesA;
-      $("gB").textContent = s.gamesB;
+      $("ttUnit").textContent = isVB ? "sets" : "games";
+      $("gA").textContent = isVB ? s.setsA : s.gamesA;
+      $("gB").textContent = isVB ? s.setsB : s.gamesB;
       $("pA").textContent = s.pointsA;
       $("pB").textContent = s.pointsB;
+      $("vbInfo").style.display = isVB && s.status !== "finished" ? "block" : "none";
+      $("vbFinish").style.display = isVB && s.status !== "finished" ? "block" : "none";
+      if (isVB) {
+        $("vbInfo").textContent = (s.isDeciding ? "Deciding set" : "Set " + s.currentSet) + ", to " + s.target + " (win by " + s.winBy + ")";
+        $("vbFinA").textContent = "Finish: " + shortName(nameA) + " wins";
+        $("vbFinB").textContent = "Finish: " + shortName(nameB) + " wins";
+      }
     } else if (isCR) {
       showCricket(s);
     } else {

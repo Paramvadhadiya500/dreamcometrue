@@ -71,6 +71,7 @@
             <select id="fSport" onchange="sportChanged()">
               <option value="cricket">Cricket</option>
               <option value="table_tennis">Table Tennis</option>
+              <option value="volleyball">Volleyball</option>
               <option value="simple">Other sport (simple score)</option>
             </select></div>
           <div><label for="fComp">Competition (groups the points table)</label>
@@ -112,6 +113,11 @@
           <select id="fBest"><option value="1">1 game</option><option value="3" selected>3 games</option><option value="5">5 games</option><option value="7">7 games</option></select>
         </div>
 
+        <div id="vbGroup" style="display:none">
+          <label for="fVbBest">Volleyball: best of (sets to 25, deciding set to 15, win by 2)</label>
+          <select id="fVbBest"><option value="3" selected>3 sets</option><option value="5">5 sets</option></select>
+        </div>
+
         <label>Scorers for this match</label>
         <div id="fScorers" class="checks"></div>
 
@@ -148,7 +154,7 @@
   let overview = { matches: [], users: [], teams: [], competitions: [] };
   let editingId = null;
 
-  const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", simple: "Other sport" };
+  const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other sport" };
 
   function el(tag, text, cls) {
     const e = document.createElement(tag);
@@ -308,6 +314,7 @@
     const s = $("fSport").value;
     $("crGroup").style.display = s === "cricket" ? "block" : "none";
     $("ttGroup").style.display = s === "table_tennis" ? "block" : "none";
+    $("vbGroup").style.display = s === "volleyball" ? "block" : "none";
   }
 
   function openForm(m) {
@@ -328,11 +335,12 @@
     $("fFirst").value = c.firstBatting;
     $("fFree").value = String(c.freeHit);
     $("fBest").value = String(m ? m.bestOf : 3);
+    $("fVbBest").value = String(m && m.sport === "volleyball" ? m.config.bestOf : 3);
     sportChanged();
 
     const locked = !!(m && m.events > 0);
     $("lockNote").style.display = locked ? "block" : "none";
-    for (const id of ["fSport", "fOvers", "fPlayers", "fFirst", "fFree", "fBest"]) $(id).disabled = locked;
+    for (const id of ["fSport", "fOvers", "fPlayers", "fFirst", "fFree", "fBest", "fVbBest"]) $(id).disabled = locked;
 
     const box = $("fScorers");
     box.textContent = "";
@@ -379,6 +387,7 @@
       };
     }
     if (sport === "table_tennis") body.bestOf = parseInt($("fBest").value, 10);
+    if (sport === "volleyball") body.config = { bestOf: parseInt($("fVbBest").value, 10) };
     return body;
   }
 

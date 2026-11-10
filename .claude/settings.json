@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true,
+    "claude-mem@thedotmack": true,
+    "impeccable@impeccable": true
+  }
+}

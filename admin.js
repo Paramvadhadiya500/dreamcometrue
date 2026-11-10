@@ -4,9 +4,10 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
+const volleyball = require("./engines/volleyball");
 
-const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", simple: "Other" };
-const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", simple: "sm" };
+const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other" };
+const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", simple: "sm" };
 
 class Problem extends Error {
   constructor(message, status = 400) {
@@ -73,6 +74,18 @@ function parseMatch(body) {
       freeHit: c.freeHit === undefined ? true : c.freeHit,
     };
     const problem = cricket.checkConfig(config);
+    if (problem) throw new Problem(problem);
+  } else if (sport === "volleyball") {
+    // version 1: the admin picks only "best of"; the set points are the defaults (the best_of column is not used)
+    const c = body.config && typeof body.config === "object" && !Array.isArray(body.config) ? body.config : {};
+    const d = volleyball.normalizeConfig({});
+    config = {
+      bestOf: c.bestOf === undefined || c.bestOf === null ? d.bestOf : c.bestOf,
+      setPoints: d.setPoints,
+      decidingPoints: d.decidingPoints,
+      winBy: d.winBy,
+    };
+    const problem = volleyball.checkConfig(config);
     if (problem) throw new Problem(problem);
   }
 
@@ -160,7 +173,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         name: m.name,
         sport: m.sport,
         bestOf: m.best_of,
-        config: m.sport === "cricket" ? cricket.normalizeConfig(m.config) : {},
+        config: m.sport === "cricket" ? cricket.normalizeConfig(m.config)
+              : m.sport === "volleyball" ? volleyball.normalizeConfig(m.config) : {},
         teamA: m.team_a,
         teamB: m.team_b,
         competition: m.competition,
@@ -230,7 +244,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
           const sameSettings =
             old.sport === m.sport &&
             old.best_of === m.bestOf &&
-            (m.sport !== "cricket" || JSON.stringify(cricket.normalizeConfig(old.config)) === JSON.stringify(m.config));
+            (m.sport !== "cricket" || JSON.stringify(cricket.normalizeConfig(old.config)) === JSON.stringify(m.config)) &&
+            (m.sport !== "volleyball" || JSON.stringify(volleyball.normalizeConfig(old.config)) === JSON.stringify(m.config));
           if (!sameSettings) throw new Problem("scoring has started, so the sport and its settings can no longer be changed", 409);
         }
 

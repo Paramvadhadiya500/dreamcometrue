@@ -23,8 +23,8 @@
 
 <div id="tt" style="display:none">
   <div class="vs" id="ttVs"></div>
-  <h1><span id="gA">0</span> : <span id="gB">0</span> <small>games</small></h1>
-  <h2><span id="pA">0</span> - <span id="pB">0</span> <small>current game</small></h2>
+  <h1><span id="gA">0</span> : <span id="gB">0</span> <small id="ttUnit">games</small></h1>
+  <h2><span id="pA">0</span> - <span id="pB">0</span> <small id="ttCur">current game</small></h2>
   <p id="history"></p>
 </div>
 
@@ -99,18 +99,22 @@
     $("name").textContent = s.name;
     document.title = s.name;
     const isTT = s.sport === "table_tennis";
+    const isVB = s.sport === "volleyball";
     const isCR = s.sport === "cricket";
-    $("tt").style.display = isTT ? "block" : "none";
+    $("tt").style.display = isTT || isVB ? "block" : "none";
     $("cricket").style.display = isCR ? "block" : "none";
-    $("simple").style.display = !isTT && !isCR ? "block" : "none";
+    $("simple").style.display = !isTT && !isCR && !isVB ? "block" : "none";
 
-    if (isTT) {
+    if (isTT || isVB) {
       $("ttVs").textContent = teamName(s, "A") + " vs " + teamName(s, "B");
-      $("gA").textContent = s.gamesA;
-      $("gB").textContent = s.gamesB;
+      $("ttUnit").textContent = isVB ? "sets" : "games";
+      $("ttCur").textContent = isVB ? (s.isDeciding ? "deciding set, to " + s.target : "set " + s.currentSet + ", to " + s.target) : "current game";
+      $("gA").textContent = isVB ? s.setsA : s.gamesA;
+      $("gB").textContent = isVB ? s.setsB : s.gamesB;
       $("pA").textContent = s.pointsA;
       $("pB").textContent = s.pointsB;
-      $("history").textContent = s.finishedGames.map((g) => g.join("-")).join(", ");
+      const done = isVB ? s.finishedSets : s.finishedGames;
+      $("history").textContent = done.map((g) => g.join("-")).join(", ");
     } else if (isCR) {
       showCricket(s);
     } else {

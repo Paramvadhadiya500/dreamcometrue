@@ -491,4 +491,239 @@ const { FailureLimiter } = require("./rateLimit");
   assert.ok(small.map.size <= 5, "the number of remembered keys is capped");
 }
 
+// ======================= Volleyball (best of 3 / 5, rally scoring) =======================
+{
+  const vb = getEngine("volleyball");
+  assert.ok(vb, "the registry returns the volleyball engine");
+  assert.strictEqual(getEngine("nope"), null);
+
+  const P = (t) => ({ type: "point", team: t, value: 1 });
+  const undo = { type: "undo" };
+  const fin = (w) => ({ type: "finish", data: { winner: w } });
+  // one set that ends a:b. The points alternate first, so the set does not end too early.
+  const setEv = (a, b) => {
+    const ev = [], m = Math.min(a, b);
+    for (let i = 0; i < m; i++) ev.push(P("A"), P("B"));
+    for (let i = 0; i < a - m; i++) ev.push(P("A"));
+    for (let i = 0; i < b - m; i++) ev.push(P("B"));
+    return ev;
+  };
+  const run = (events, config) => vb.compute(effectivePoints(events), { config });
+
+  // ---- a normal set: to 25, win by 2, no cap ----
+  let v = run(setEv(25, 23));
+  assert.deepStrictEqual([v.setsA, v.setsB, v.pointsA, v.pointsB, v.currentSet], [1, 0, 0, 0, 2]);
+  assert.deepStrictEqual(v.finishedSets, [[25, 23]]);
+  assert.strictEqual(v.status, "live");
+  assert.strictEqual(v.target, 25);
+  assert.strictEqual(v.isDeciding, false);
+  v = run(setEv(25, 24));
+  assert.deepStrictEqual([v.setsA, v.setsB, v.pointsA, v.pointsB], [0, 0, 25, 24], "25-24 does not end a set");
+  v = run(setEv(26, 24));
+  assert.deepStrictEqual([v.setsA, v.setsB], [1, 0], "26-24 ends a set");
+  v = run(setEv(30, 28));
+  assert.deepStrictEqual([v.setsA, v.setsB], [1, 0], "no cap: 30-28 ends a set");
+  v = run(setEv(23, 25));
+  assert.deepStrictEqual([v.setsA, v.setsB], [0, 1], "team B can win a set");
+
+  // ---- deciding set: to 15, win by 2 ----
+  const oneAll = [...setEv(25, 20), ...setEv(20, 25)];
+  v = run(oneAll);
+  assert.deepStrictEqual([v.setsA, v.setsB, v.currentSet, v.isDeciding, v.target], [1, 1, 3, true, 15]);
+  v = run([...oneAll, ...setEv(15, 13)]);
+  assert.strictEqual(v.status, "finished");
+  assert.strictEqual(v.winner, "A");
+  assert.deepStrictEqual(v.finishedSets, [[25, 20], [20, 25], [15, 13]]);
+  v = run([...oneAll, ...setEv(15, 14)]);
+  assert.deepStrictEqual([v.status, v.pointsA, v.pointsB], ["live", 15, 14], "15-14 does not end the deciding set");
+  v = run([...oneAll, ...setEv(16, 14)]);
+  assert.strictEqual(v.winner, "A");
+  v = run([...oneAll, ...setEv(13, 15)]);
+  assert.strictEqual(v.winner, "B");
+  v = run([...oneAll, ...setEv(14, 15)]);
+  assert.strictEqual(v.status, "live");
+  v = run([...setEv(25, 20)]);
+  assert.strictEqual(v.isDeciding, false);
+  assert.strictEqual(v.target, 25, "after 1-0 the next set is still to 25");
+
+  // ---- whole matches: best of 3 ----
+  v = run([...setEv(25, 10), ...setEv(25, 12)]);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA, v.setsB, v.ended], ["finished", "A", 2, 0, "normal"]);
+  assert.strictEqual(v.resultText, "Team A won 2-0");
+  v = run([...setEv(25, 10), ...setEv(20, 25), ...setEv(10, 15)]);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA, v.setsB], ["finished", "B", 1, 2]);
+  assert.strictEqual(v.resultText, "Team B won 2-1");
+
+  // ---- best of 5 ----
+  const bo5 = { bestOf: 5 };
+  v = run([...setEv(25, 1), ...setEv(25, 1), ...setEv(25, 1)], bo5);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA, v.setsB, v.setsToWin], ["finished", "A", 3, 0, 3]);
+  v = run([...setEv(25, 1), ...setEv(25, 1)], bo5);
+  assert.strictEqual(v.status, "live", "2-0 is not enough in best of 5");
+  const twoAll = [...setEv(25, 20), ...setEv(25, 20), ...setEv(20, 25), ...setEv(20, 25)];
+  v = run(twoAll, bo5);
+  assert.deepStrictEqual([v.setsA, v.setsB, v.isDeciding, v.target, v.currentSet], [2, 2, true, 15, 5]);
+  v = run([...twoAll, ...setEv(15, 10)], bo5);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA, v.setsB], ["finished", "A", 3, 2]);
+  v = run([...setEv(25, 20), ...setEv(25, 20), ...setEv(20, 25)], bo5);
+  assert.deepStrictEqual([v.isDeciding, v.target], [false, 25], "2-1 in best of 5 is not a deciding set");
+
+  // ---- nothing counts after the match is over ----
+  const done = [...setEv(25, 10), ...setEv(25, 12)];
+  assert.deepStrictEqual(run([...done, P("B"), P("B"), P("A")]), run(done), "extra events are ignored");
+  assert.strictEqual(vb.validate(P("A"), run(done)), "match already finished");
+  assert.strictEqual(vb.validate(fin("A"), run(done)), "match already finished");
+
+  // ---- undo ----
+  v = run([P("A"), P("A"), P("B"), undo]);
+  assert.deepStrictEqual([v.pointsA, v.pointsB], [2, 0], "undo in the middle of a set");
+  v = run([...setEv(25, 23), undo]);
+  assert.deepStrictEqual([v.setsA, v.pointsA, v.pointsB, v.finishedSets.length], [0, 24, 23, 0], "undo of the set-winning point reopens the set");
+  v = run([...setEv(25, 20), ...setEv(25, 20), undo]);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA, v.pointsA, v.pointsB], ["live", null, 1, 24, 20], "undo of the match-winning point reopens the match");
+  v = run([...done, fin("B"), undo]);
+  assert.strictEqual(v.status, "finished", "undo of a finish goes back to the earlier finished state");
+  v = run([...setEv(25, 20), fin("B"), undo]);
+  assert.deepStrictEqual([v.status, v.winner, v.setsA], ["live", null, 1], "undo of a walkover reopens the match");
+  v = run([P("A"), undo, undo]);
+  assert.deepStrictEqual([v.pointsA, v.status], [0, "live"], "extra undo does not break compute");
+
+  // ---- walkover (scorer finishes early and picks the winner) ----
+  v = run([...setEv(25, 20), P("B"), fin("B")]);
+  assert.deepStrictEqual([v.status, v.winner, v.ended, v.setsA, v.setsB, v.pointsB], ["finished", "B", "walkover", 1, 0, 1]);
+  assert.strictEqual(v.resultText, "Team B won (walkover)");
+  assert.strictEqual(run([fin("A"), P("B")]).winner, "A", "no scoring after a walkover");
+
+  // ---- checking an action ----
+  const live = run([P("A")]);
+  assert.strictEqual(vb.validate(P("A"), live), null);
+  assert.strictEqual(vb.validate({ type: "point", team: "B" }, live), null, "value may be missing");
+  assert.strictEqual(vb.validate({ type: "point", team: "B", value: null }, live), null);
+  assert.strictEqual(vb.validate({ type: "point", team: "B", value: 2 }, live), "bad value");
+  assert.strictEqual(vb.validate({ type: "point", team: "B", value: 0 }, live), "bad value");
+  assert.strictEqual(vb.validate({ type: "point", team: "C", value: 1 }, live), "bad team");
+  assert.strictEqual(vb.validate({ type: "point", value: 1 }, live), "bad team");
+  assert.strictEqual(vb.validate({ type: "ball", data: {} }, live), "unknown action");
+  assert.strictEqual(vb.validate({ type: "end_innings" }, live), "unknown action");
+  assert.strictEqual(vb.validate({ type: "finish" }, live), "choose the winner");
+  assert.strictEqual(vb.validate({ type: "finish", data: {} }, live), "choose the winner");
+  assert.strictEqual(vb.validate({ type: "finish", data: { winner: "C" } }, live), "choose the winner");
+  assert.strictEqual(vb.validate({ type: "finish", data: { winner: "draw" } }, live), "choose the winner");
+  assert.strictEqual(vb.validate({ type: "finish", data: [] }, live), "choose the winner");
+  assert.strictEqual(vb.validate(fin("A"), live), null);
+  assert.strictEqual(vb.validate(fin("B"), live), null);
+
+  // ---- the cleaned copy that is stored ----
+  assert.deepStrictEqual(vb.clean({ type: "finish", data: { winner: "A", junk: "x".repeat(100) } }), { winner: "A" });
+  assert.strictEqual(vb.clean({ type: "finish", data: { winner: "Z" } }), null);
+  assert.strictEqual(vb.clean({ type: "finish" }), null);
+  assert.strictEqual(vb.clean({ type: "point", team: "A", value: 1, data: { winner: "A" } }), null);
+
+  // ---- match settings ----
+  const def = { bestOf: 3, setPoints: 25, decidingPoints: 15, winBy: 2 };
+  assert.deepStrictEqual(vb.normalizeConfig(undefined), def);
+  assert.deepStrictEqual(vb.normalizeConfig(null), def);
+  assert.deepStrictEqual(vb.normalizeConfig({}), def);
+  assert.deepStrictEqual(vb.normalizeConfig({ bestOf: 5 }), { ...def, bestOf: 5 });
+  assert.deepStrictEqual(vb.normalizeConfig({ bestOf: 5, hack: 1 }), { ...def, bestOf: 5 }, "unknown keys are dropped");
+  assert.deepStrictEqual(vb.normalizeConfig({ bestOf: 4 }), def, "invalid settings fall back to the defaults");
+  assert.deepStrictEqual(vb.normalizeConfig([1, 2]), def);
+  assert.deepStrictEqual(vb.normalizeConfig("x"), def);
+  assert.strictEqual(vb.checkConfig(def), null);
+  assert.strictEqual(vb.checkConfig({ ...def, bestOf: 5 }), null);
+  assert.strictEqual(vb.checkConfig({ ...def, setPoints: 21, decidingPoints: 15 }), null);
+  assert.strictEqual(vb.checkConfig({ ...def, winBy: 1 }), null);
+  const badCfg = [null, undefined, [], "x", 5, { ...def, bestOf: 1 }, { ...def, bestOf: 2 }, { ...def, bestOf: 4 }, { ...def, bestOf: 7 },
+    { ...def, bestOf: "3" }, { ...def, bestOf: 3.5 }, { ...def, bestOf: null }, { ...def, setPoints: 4 }, { ...def, setPoints: 51 },
+    { ...def, setPoints: "25" }, { ...def, setPoints: 25.5 }, { ...def, decidingPoints: 4 }, { ...def, decidingPoints: 26 },
+    { ...def, setPoints: 21, decidingPoints: 25 }, { ...def, winBy: 0 }, { ...def, winBy: 3 }, { ...def, winBy: "2" }];
+  for (const c of badCfg) assert.strictEqual(typeof vb.checkConfig(c), "string", "rejected: " + JSON.stringify(c));
+  // settings really change the rules
+  v = run([...setEv(21, 19)], { bestOf: 3, setPoints: 21, decidingPoints: 15, winBy: 2 });
+  assert.strictEqual(v.setsA, 1);
+  v = run([...setEv(25, 24)], { bestOf: 3, setPoints: 25, decidingPoints: 15, winBy: 1 });
+  assert.strictEqual(v.setsA, 1, "win by 1");
+
+  // ---- result() and headline() ----
+  const nm = { A: "CSE", B: "ECE" };
+  let st = run([...setEv(25, 20), P("A"), P("B"), P("A")]);
+  assert.deepStrictEqual(vb.result(st), { finished: false, winner: null, forA: 1, forB: 0 });
+  assert.strictEqual(vb.headline(st, nm), "CSE 1-0 ECE (set 2: 2-1)");
+  st = run([...oneAll, P("A")]);
+  assert.strictEqual(vb.headline(st, nm), "CSE 1-1 ECE (deciding set: 1-0)");
+  st = run([...setEv(25, 20), ...setEv(20, 25), ...setEv(15, 9)]);
+  assert.deepStrictEqual(vb.result(st), { finished: true, winner: "A", forA: 2, forB: 1 });
+  assert.strictEqual(vb.headline(st, nm), "CSE 2-1 ECE");
+  st = run([...setEv(25, 20), fin("B")]);
+  assert.deepStrictEqual(vb.result(st), { finished: true, winner: "B", forA: 1, forB: 0 }, "a walkover keeps the sets as recorded");
+  assert.strictEqual(vb.headline(st, nm), "ECE won (walkover), sets 1-0");
+  st = run([]);
+  assert.deepStrictEqual(vb.result(st), { finished: false, winner: null, forA: 0, forB: 0 });
+  assert.strictEqual(vb.headline(st, nm), "CSE 0-0 ECE (set 1: 0-0)");
+
+  // ---- points table: forA / forB are sets ----
+  const vbDone = (a, b, evs) => ({ stage: "group", competition: "", sport: "volleyball", teamA: a, teamB: b, result: vb.result(run(evs)) });
+  const vbTable = buildStandings([
+    vbDone("CSE", "ECE", [...setEv(25, 10), ...setEv(25, 12)]),                       // CSE 2-0
+    vbDone("ECE", "ME", [...setEv(25, 10), ...setEv(20, 25), ...setEv(15, 5)]),       // ECE 2-1
+    { stage: "group", competition: "", sport: "volleyball", teamA: "ME", teamB: "CSE", result: vb.result(run(setEv(25, 20))) }, // not finished: ignored
+  ]);
+  assert.strictEqual(vbTable.length, 1);
+  assert.strictEqual(vbTable[0].name, "Volleyball");
+  const vbRows = Object.fromEntries(vbTable[0].rows.map((r) => [r.team, r]));
+  assert.deepStrictEqual([vbRows.CSE.points, vbRows.CSE.won, vbRows.CSE.diff], [2, 1, 2]);
+  assert.deepStrictEqual([vbRows.ECE.points, vbRows.ECE.won, vbRows.ECE.lost, vbRows.ECE.diff], [2, 1, 1, -1]);
+  assert.deepStrictEqual([vbRows.ME.points, vbRows.ME.lost, vbRows.ME.diff], [0, 1, -1]);
+  assert.strictEqual(vbTable[0].hasNrr, false);
+
+  // ---- random matches: 400 games, invariants checked after EVERY event ----
+  const vr = rng(2026);
+  let vbFinished = 0, vbUndos = 0;
+  for (let g = 0; g < 400; g++) {
+    const bestOf = vr() < 0.5 ? 3 : 5;
+    const toWin = (bestOf + 1) / 2;
+    const cfg = { bestOf };
+    const events = [];
+    const kept = [];                                          // my own copy of the events that still count
+    let state = run(events, cfg);
+    for (let step = 0; step < 3000 && state.status !== "finished"; step++) {
+      if (kept.length > 0 && vr() < 0.08) {
+        events.push(undo); kept.pop(); vbUndos++;
+      } else {
+        const e = P(vr() < 0.5 ? "A" : "B");
+        assert.strictEqual(vb.validate(e, state), null);
+        events.push(e); kept.push(e);
+      }
+      state = run(events, cfg);
+      assert.deepStrictEqual(state, vb.compute(kept, { config: cfg }), "undo equals a fresh replay");
+      assert.ok(state.pointsA >= 0 && state.pointsB >= 0);
+      assert.strictEqual(state.finishedSets.length, state.setsA + state.setsB);
+      assert.ok(state.finishedSets.length <= 2 * toWin - 1);
+      let wa = 0, wb = 0;
+      for (const [a, b] of state.finishedSets) {
+        assert.ok(Math.abs(a - b) >= 2 && Math.max(a, b) >= 15, "a finished set has a 2 point lead and 15+ points");
+        if (a > b) wa++; else wb++;
+      }
+      assert.deepStrictEqual([wa, wb], [state.setsA, state.setsB]);
+      assert.ok(state.setsA <= toWin && state.setsB <= toWin && !(state.setsA === toWin && state.setsB === toWin));
+      assert.strictEqual(state.status === "finished", state.setsA === toWin || state.setsB === toWin);
+      assert.strictEqual(state.winner, state.setsA === toWin ? "A" : state.setsB === toWin ? "B" : null);
+      if (state.status === "live") {
+        const lead = Math.abs(state.pointsA - state.pointsB);
+        assert.ok(!(Math.max(state.pointsA, state.pointsB) >= state.target && lead >= 2), "a live set is never already won");
+        assert.strictEqual(state.isDeciding, state.setsA === toWin - 1 && state.setsB === toWin - 1);
+        assert.strictEqual(state.target, state.isDeciding ? 15 : 25);
+        assert.strictEqual(state.currentSet, state.setsA + state.setsB + 1);
+      }
+    }
+    if (state.status === "finished") {
+      vbFinished++;
+      assert.strictEqual(vb.validate(P("A"), state), "match already finished");
+      assert.deepStrictEqual(run([...events, P("A"), P("B")], cfg), state, "nothing counts after the match");
+    }
+  }
+  assert.ok(vbFinished >= 390, "almost all random matches finish (" + vbFinished + ")");
+  assert.ok(vbUndos > 500, "the random test really used undo");
+}
+
 console.log("All tests passed");

@@ -11,8 +11,9 @@ Line numbers are from the files as they were on 2026-11-10 and will drift when c
 - `home.js`: builds `/api/home` and `/api/standings`; 3 s cache, gzip and ETag made once per rebuild (`home.js:8-15,86-93`).
 - `standings.js`: pure points-table logic. Win 2, draw 1, loss 0 (`standings.js:9`).
 - `engine.js`: table tennis rules `computeTableTennis` (`:2`) and `effectivePoints` for undo (`:39`).
-- `engines/index.js`: `getEngine(sport)` registry for `table_tennis`, `simple`, `cricket` (`:2-12`).
+- `engines/index.js`: `getEngine(sport)` registry for `table_tennis`, `simple`, `cricket`, `volleyball` (`:2-13`).
 - `engines/tableTennis.js`, `engines/simple.js`, `engines/cricket.js`: each exports `compute, validate, result, headline`; cricket also has `clean, checkConfig, normalizeConfig, parseBall`.
+- `engines/volleyball.js`: best of 3 or 5 sets, rally scoring. Exports `compute, validate, clean, checkConfig, normalizeConfig, result, headline`. Settings live in `matches.config` (`bestOf, setPoints, decidingPoints, winBy`); the `best_of` column is not used. `finish` carries `data.winner` (saved through `clean`, because the server saves `team` only for `point`, `server.js:160`). `forA/forB` in `result()` = sets won. No migration was needed. Admin side: `admin.js` (labels, prefix `vb`, config check, settings lock), `add-match.js --sport volleyball --bestof 3|5`. Pages: `scorer.html` and `match.html` reuse the table tennis view with "sets" labels (`isVB`); `admin.html` has a "best of" select. Tests: last section of `test.js`.
 - `rateLimit.js`: `FailureLimiter` (sliding window, in memory) used for login limits (`server.js:227-228`).
 - `db.js`: Postgres pool. Exits if `DATABASE_URL` is missing (`db.js:3-6`).
 - `migrate.js`: runs `migrations/*.sql` in name order, one transaction each, records in `schema_migrations` (`migrate.js:14-36`).
