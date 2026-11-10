@@ -94,9 +94,9 @@ This file is a record of real mistakes made while building College Live Score. E
 
 **Why:** `docker compose up -d` without `--build` reuses the existing image.
 
-**The fix:** `DEPLOY.md` now says `docker compose up -d --build` explicitly.
+**The fix:** build the image before the migration. (Superseded: the one correct order is in lesson 5 and `DEPLOY.md` section B: `docker compose build`, then `migrate.js`, then `up -d`. Do not use `up -d --build` before the migration.)
 
-**Rule:** Always `--build` when deploying new code.
+**Rule:** Always build before `migrate.js`, and start the new code (`up -d`) only after the migration.
 
 ---
 

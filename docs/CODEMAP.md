@@ -121,7 +121,7 @@ Audit date: 2026-11-10. Read-only review; nothing has been applied.
 | Q3 | Scorer retrying forever OK? | Duplicate-id check prevents double-counting; no backoff or queue cap is a gap; DB `connectionTimeoutMillis` is unset (waits forever) | Medium | Exponential backoff + queue-size cap in `scorer.html:197`; set `connectionTimeoutMillis: 5000` in `db.js:8` | You (edit client + db.js) |
 | Q4 | App starts before Postgres? | Yes — `depends_on` has no healthcheck; Postgres may not be ready within seconds of reboot | Medium | Add `healthcheck` to `db` service (pg_isready -U livescore -d livescore); add `condition: service_healthy` to `app.depends_on` in `docker-compose.yml` | You (edit `docker-compose.yml`) |
 | Q5 | FLUSHALL needed every deploy? | No — only after state-shape/engine-logic changes or a DB restore; harmless 60 s TTL handles normal deploys | Low | Use targeted `--scan --pattern "state:*"` delete; remove FLUSHALL from routine deploy script in `PROJECT_CONTEXT.md:128` | You (edit `PROJECT_CONTEXT`) |
-| E1 | Migration order correct? | `DEPLOY.md` Section B is wrong (migrate before build); `docs/LESSONS.md` #5 and `PROJECT_CONTEXT.md:126` are correct (build then migrate; migrations are COPIED into the image by `Dockerfile:8`) | Medium | Fix `DEPLOY.md:39-41` to match: `git pull → up -d --build → node migrate.js` | You (edit `DEPLOY.md`) |
+| E1 | Migration order correct? | FIXED. Correct order everywhere now: backup, `git pull`, `docker compose build`, `migrate.js`, `up -d` (migrations are COPIED into the image by `Dockerfile:8`, so build first; new code starts last) | Done | See `DEPLOY.md` section B | Done |
 | E2 | Node version mismatch? | Docker uses Node 22; laptop runs v26.5.1; no `"engines"` field in `package.json` | Low | Add `"engines": {"node": ">=22"}` to `package.json` | You |
 | E3 | `.env.example` missing? | File referenced by `DEPLOY.md:21` but absent from the repo | Low | Create `.env.example` (content in audit report); never commit with real secrets | You |
 
@@ -146,7 +146,7 @@ These are decisions, not code changes. Nothing below has been done yet.
 4. `engines/test.js` is a mistake and can be deleted.
 5. `loadtest-real-fixed.js` is the current load test.
 6. Scorer retry: duplicate-id check prevents double counting, but long DB outages still have gaps (no backoff or queue cap seen in `scorer.html:197`).
-7. After a full reboot the app can crash-loop before Postgres is ready (no healthcheck, `docker-compose.yml:11-13`).
+7. Correction (2026-11-10 review): the app does NOT connect to Postgres at start (`db.js` pool is lazy), so it does not crash-loop for Postgres; it returns 500 until the DB is up. It DOES exit if Redis is down at start (`server.js:476`). No healthcheck for either (`docker-compose.yml:11-13`).
 8. Team names for the points table come from the admin only.
 9. `FLUSHALL` after deploy is a habit, not a need, and it carries a small risk during live events.
 10. When docs disagree, trust `PROJECT_CONTEXT.md`.

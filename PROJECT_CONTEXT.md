@@ -130,11 +130,14 @@ Deploy (Ubuntu server, in ~/dreamcometrue), always in this order:
 ```
 ./scripts/backup.sh
 git pull
-docker compose up -d --build
+docker compose build
 docker compose run --rm app node migrate.js     # must print "applied ..." for new files
-docker compose exec redis redis-cli FLUSHALL
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost/api/matches     # must print 200
+docker compose up -d                            # new code starts only AFTER the migration
+# Redis flush only if an engine or the state shape changed (delete keys state:*), not on every deploy
+curl -s -o /dev/null -w "%{http_code}\n" https://52.66.126.144/api/matches     # must print 200 (use your own IP or domain = DOMAIN in .env)
 ```
+Do not test with `localhost`: `http://localhost` prints 308 (redirect to HTTPS) and `https://localhost` prints 000 (TLS error "internal error"),
+because Caddy only has a certificate for the DOMAIN address. This is normal, not a fault. App-only check: `docker compose exec app node -e "fetch('http://localhost:3000/health').then(r=>console.log(r.status))"` must print 200.
 Create data on the SERVER too (it is a different database): `docker compose run --rm app node add-match.js ...` and `add-user.js ...`.
 Status report to paste into a new chat: `./scripts/snapshot.sh` (prints no secrets).
 More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
@@ -147,7 +150,7 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 5. New code was deployed before the database migration ran, so every request crashed (missing column `sport`).
 6. Matches created with SQL on the laptop did not exist on the server (separate databases).
 7. Placeholder passwords from instructions (like CHOOSE-A-PASSWORD1) were used as real passwords. Set real ones. Admin passwords especially: the admin panel is public on the internet (HTTP).
-8. The image must be rebuilt (`up -d --build`) before `migrate.js` runs, or new files are missing inside the container.
+8. The image must be rebuilt (`docker compose build`) before `migrate.js` runs, or new files are missing inside the container. Do not use `up -d --build` before the migration (see 5).
 9. New engine files (`result`, `headline`) were not copied in, so cards had no score line. After copying files, run `node test.js` and check with Select-String.
 10. Switching to HTTPS can lock people out if the certificate is not issued (browsers get an error). Always know the rollback: `DOMAIN=:80`, `docker compose up -d caddy`.
 11. Do not delete the `caddy_data` volume or change DOMAIN over and over: Let's Encrypt limits repeated certificates for the same name or address.

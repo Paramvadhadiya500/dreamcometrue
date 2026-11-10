@@ -18,7 +18,7 @@ All four run with `docker compose` on one EC2 server.
 1. Launch EC2 as above, attach the Elastic IP (or a new IP).
 2. `sudo apt update && sudo apt install -y docker.io docker-compose-v2 git && sudo usermod -aG docker ubuntu`, then log in again.
 3. `git clone <repo-url> && cd <repo>`
-4. Create `.env` (see `.env.example`; DOMAIN is explained in LESSON_12.md):
+4. Create `.env` (`.env.example` comes in a later step; until then use this. DOMAIN = your domain name or IP for HTTPS, empty = plain HTTP):
    ```
    DOMAIN=
    ACME_PROFILE=classic
@@ -28,9 +28,9 @@ All four run with `docker compose` on one EC2 server.
 5. `docker compose up -d db redis` (wait ~10 seconds)
 6. `docker compose run --rm app node migrate.js`
 7. EITHER restore the latest backup: `./scripts/restore.sh <backup.sql.gz>`
-   OR start fresh: `docker compose run --rm app node seed.js`, then set real passwords with
-   `docker compose run --rm app node add-user.js <name> <admin|scorer> '<password 10+ chars>'`
-   and disable demo users.
+   OR start fresh: create your own admin with
+   `docker compose run --rm app node add-user.js <name> admin '<password 10+ chars>'`.
+   Do NOT run `seed.js` on a server: it creates demo users with known passwords (admin123, rahul123, neha123).
 8. `docker compose up -d --build`, then `docker compose ps` (all four running).
 9. Open `http://<ip>`, log in on `/scorer.html`.
 
@@ -40,11 +40,15 @@ Run on the Ubuntu server, in the project folder, in exactly this order:
 ./scripts/backup.sh
 git pull
 docker compose build
+docker compose run --rm app ls migrations       # the new file must be listed (proves it is inside the image)
 docker compose run --rm app node migrate.js     # must print "applied ..." for every new migration file
 docker compose up -d
 docker compose ps                               # all four running
 curl -s http://localhost/health
 ```
+Never `up -d --build` BEFORE `migrate.js`: that starts new code on the old database (lesson 5).
+Rule for migrations: they may only ADD things (tables, columns). The old app keeps running until `up -d`, so it must still work on the new schema.
+Redis flush is NOT part of a normal deploy (cached scores expire after 60 s). Only if an engine or the state shape changed: `docker compose exec redis redis-cli --scan --pattern 'state:*'` and delete those keys.
 Why this order:
 - The migration files are copied into the app image when it is built (`Dockerfile`: `COPY . .`, and nothing mounts the source folder). `migrate.js` only sees the files that are inside the LAST BUILT image, so build first. If you migrate before building, it says "up to date" and applies nothing.
 - `docker compose build` does not stop the running app. The old app keeps working while the database changes (migrations only add things and can run twice). Only the last step, `up -d`, starts the new code, so new code never runs on an old database.
@@ -52,7 +56,7 @@ Why this order:
 
 ## C. Backups
 - Automatic: `./scripts/install-cron.sh` (hourly) or `./scripts/install-cron.sh daily`; old backups are deleted after 7 days.
-- Safe restore drill (does not touch the live database): see LESSON_12.md, section 8.
+- Restore drill: NOT written yet (LESSON_12.md was deleted). A safe drill script is planned (restores into a scratch database, never the live one).
 - Manual: `./scripts/backup.sh` (files go to ~/backups on the server)
 - Hourly cron during events (see lesson 8 step 12)
 - Copy backups OFF the server: `scp -i <key>.pem ubuntu@<ip>:~/backups/<file> .`
@@ -70,7 +74,7 @@ Why this order:
 | Lost .env | Make a new JWT_SECRET (scorers log in again). DB_PASSWORD must match the old database volume, otherwise restore a backup into a new database. |
 
 ## E. HTTPS, passwords and checks (Lesson 12)
-- Switch HTTPS on: set `DOMAIN` (and `ACME_PROFILE`) in `.env`, then `docker compose up -d`. Steps, checks and rollback: LESSON_12.md, section 4.
+- Switch HTTPS on: set `DOMAIN` (and `ACME_PROFILE`) in `.env`, then `docker compose up -d`. Know the rollback first (next line).
 - Rollback to plain HTTP: `DOMAIN=:80` in `.env`, then `docker compose up -d caddy`.
 - Weak passwords: `docker compose run --rm app node check-passwords.js`
 - Before the event and after every deploy: `./scripts/security-check.sh` (no FAIL allowed).

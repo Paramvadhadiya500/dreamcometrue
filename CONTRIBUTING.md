@@ -119,6 +119,22 @@ This is not distrust — it limits the blast radius if anything goes wrong.
 - **Never edit a migration that was already applied.** It has already run on the production database. Changes to it are silently ignored there.
 - To change the schema: add a new numbered file (`005_your_change.sql`). Write it with `IF NOT EXISTS` or similar guards so it is safe to run twice.
 
+### Deploying (owner only, on the Ubuntu server)
+
+One order, always (full text and reasons: `DEPLOY.md` section B):
+
+```
+./scripts/backup.sh
+git pull
+docker compose build
+docker compose run --rm app ls migrations
+docker compose run --rm app node migrate.js
+docker compose up -d
+docker compose ps ; curl -s http://localhost/health
+```
+
+Build first (migration files live inside the image), migrate second, start new code last. Migrations must only add things. Never `docker compose down -v`.
+
 ---
 
 ## 4. Code rules
