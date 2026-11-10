@@ -726,4 +726,34 @@ const { FailureLimiter } = require("./rateLimit");
   assert.ok(vbUndos > 500, "the random test really used undo");
 }
 
+// ======================= Startup guard: JWT_SECRET =======================
+const { checkJwtSecret, DEV_SECRET } = require("./config");
+{
+  const S32 = "x".repeat(32), S31 = "x".repeat(31), S64 = "a".repeat(64);
+  const prod = (extra) => ({ NODE_ENV: "production", ...extra });
+
+  // production: missing, default, or short secret stops the server
+  for (const env of [prod({}), prod({ JWT_SECRET: "" }), prod({ JWT_SECRET: DEV_SECRET }), prod({ JWT_SECRET: S31 })]) {
+    const r = checkJwtSecret(env);
+    assert.ok(r.problem, "a weak secret is reported");
+    assert.strictEqual(r.fatal, true, "production refuses to start with a weak secret");
+  }
+  // production: a strong secret is used as it is
+  for (const s of [S32, S64]) {
+    const r = checkJwtSecret(prod({ JWT_SECRET: s }));
+    assert.deepStrictEqual(r, { secret: s, problem: null, fatal: false });
+  }
+  // laptop (no NODE_ENV): never fatal; a missing secret falls back to the dev value, a set one is used
+  const dev = checkJwtSecret({});
+  assert.strictEqual(dev.fatal, false);
+  assert.ok(dev.problem, "the laptop still gets a warning");
+  assert.strictEqual(dev.secret, DEV_SECRET);
+  const devShort = checkJwtSecret({ JWT_SECRET: "short" });
+  assert.strictEqual(devShort.fatal, false);
+  assert.strictEqual(devShort.secret, "short", "a set secret is used even if short (same as before)");
+  assert.strictEqual(checkJwtSecret({ NODE_ENV: "development", JWT_SECRET: S31 }).fatal, false);
+  // the message never contains the secret itself
+  assert.ok(!checkJwtSecret(prod({ JWT_SECRET: "abc-secret-value" })).problem.includes("abc-secret-value"));
+}
+
 console.log("All tests passed");

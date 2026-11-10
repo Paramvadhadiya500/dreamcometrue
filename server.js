@@ -12,8 +12,17 @@ const { createHome } = require("./home");
 const { competitionOf } = require("./standings");
 const { createAdminRouter } = require("./admin");
 const { FailureLimiter } = require("./rateLimit");
+const { checkJwtSecret } = require("./config");
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-only-change-me";
+// In production (the Docker image sets NODE_ENV=production) a missing, default or short secret stops the server.
+// On a laptop it only warns, so `npm start` keeps working.
+const jwtCheck = checkJwtSecret(process.env);
+if (jwtCheck.fatal) {
+  console.error("startup refused: " + jwtCheck.problem + ". Put a long random value in .env (openssl rand -hex 32).");
+  process.exit(1);
+}
+if (jwtCheck.problem) console.warn("warning: " + jwtCheck.problem + " (allowed only outside production)");
+const JWT_SECRET = jwtCheck.secret;
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 10);
