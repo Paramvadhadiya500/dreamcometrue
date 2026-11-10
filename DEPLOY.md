@@ -35,12 +35,20 @@ All four run with `docker compose` on one EC2 server.
 9. Open `http://<ip>`, log in on `/scorer.html`.
 
 ## B. Normal update
+Run on the Ubuntu server, in the project folder, in exactly this order:
 ```
+./scripts/backup.sh
 git pull
-docker compose run --rm app node migrate.js
-docker compose up -d --build
+docker compose build
+docker compose run --rm app node migrate.js     # must print "applied ..." for every new migration file
+docker compose up -d
+docker compose ps                               # all four running
+curl -s http://localhost/health
 ```
-Take a backup first when the update changes the database: `./scripts/backup.sh`
+Why this order:
+- The migration files are copied into the app image when it is built (`Dockerfile`: `COPY . .`, and nothing mounts the source folder). `migrate.js` only sees the files that are inside the LAST BUILT image, so build first. If you migrate before building, it says "up to date" and applies nothing.
+- `docker compose build` does not stop the running app. The old app keeps working while the database changes (migrations only add things and can run twice). Only the last step, `up -d`, starts the new code, so new code never runs on an old database.
+- Take the backup first. It is cheap, and it is the only way back if a migration goes wrong.
 
 ## C. Backups
 - Automatic: `./scripts/install-cron.sh` (hourly) or `./scripts/install-cron.sh daily`; old backups are deleted after 7 days.

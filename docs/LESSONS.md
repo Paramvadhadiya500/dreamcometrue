@@ -58,9 +58,9 @@ This file is a record of real mistakes made while building College Live Score. E
 
 **Why:** The deploy order was wrong.
 
-**The fix:** The deploy order in `DEPLOY.md` and `CONTRIBUTING.md` is now explicit: build first, then migrate.
+**The fix:** The deploy order in `DEPLOY.md` (section B) is now explicit: build the image first (the migration files live inside the image), run the migration, and only then restart the app with the new code.
 
-**Rule:** Deploy order is always: backup → `git pull` → `docker compose up -d --build` → `node migrate.js`. Never skip the migration step.
+**Rule:** Deploy order is always: backup → `git pull` → `docker compose build` → `docker compose run --rm app node migrate.js` → `docker compose up -d` → check `docker compose ps` and `/health`. Never skip the migration step, and never start new code before the migration has run.
 
 ---
 
