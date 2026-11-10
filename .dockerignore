@@ -1,6 +1,16 @@
 node_modules
 .git
+.github
 .env
 *.log
 loadtest.js
 test.js
+*.pem
+backups
+*.sql.gz
+docs
+*.md
+.agents
+.claude
+.impeccable
+skills-lock.json

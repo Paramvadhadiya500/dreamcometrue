@@ -33,7 +33,7 @@ A volunteer scorer enters events (a cricket ball, a table tennis point) on a pho
    npm install
    ```
 
-2. **Create your `.env` file.** Copy the structure below — `.env.example` does not exist yet (see UNSURE items), so use this template:
+2. **Create your `.env` file.** Copy `.env.example` to `.env` and use its LAPTOP block, like this:
 
    ```
    DATABASE_URL=postgres://livescore:<your-local-db-password>@localhost:5432/livescore

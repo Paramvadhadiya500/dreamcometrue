@@ -11,6 +11,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.3",
