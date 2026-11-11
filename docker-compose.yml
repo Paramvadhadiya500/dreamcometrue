@@ -8,9 +8,11 @@ services:
       DATABASE_URL: postgres://livescore:${DB_PASSWORD}@db:5432/livescore
       REDIS_URL: redis://redis:6379
       TRUST_PROXY: 1          # Caddy sits in front: use the visitor address it passes on
-    depends_on:
-      - db
-      - redis
+    depends_on:               # start the app only when the database and Redis really answer
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:16
@@ -21,10 +23,24 @@ services:
       POSTGRES_DB: livescore
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -h 127.0.0.1: during its very first start Postgres runs a temporary server that only listens on a
+      # local socket; asking over TCP means "healthy" only once the real server is up
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U livescore -d livescore"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   redis:
     image: redis:7
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   caddy:
     image: caddy:2

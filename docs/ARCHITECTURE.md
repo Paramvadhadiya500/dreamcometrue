@@ -133,6 +133,18 @@ This means:
 
 **Redis adapter (Socket.IO):** `pubClient` and `subClient` let `io.to(matchId).emit(...)` reach students connected to any server. This would allow horizontal scaling in future.
 
+### When the database or Redis fails
+
+| Situation | What happens |
+|---|---|
+| Server boots, containers start together | `docker-compose.yml` health checks: the app starts only after `db` answers `pg_isready` and `redis` answers `PING`. |
+| Redis not reachable when the app starts | The app exits (`server.js` `main()`), Docker restarts it. The health check makes this rare. |
+| Postgres restarts while the app runs | Idle pool connections break; `db.js` logs `db pool error ...` and the pool opens new ones. Before 2026-11-11 this crashed the whole app (tested). |
+| Postgres down or hung | Each query fails after at most 5 s (`connectionTimeoutMillis`). HTTP routes answer 500; scorer actions get `{ ok:false, retry:true }`, so the phone keeps the entry and retries. Students keep the last score: Redis copy up to 60 s, home page cache 3 s. |
+| Postgres back | Next query works; nothing to restart. |
+
+Health checks only order the START. Docker does not restart a container because it is "unhealthy"; `restart: unless-stopped` restarts only a container that exited.
+
 ---
 
 ## 6. Live updates (Socket.IO)

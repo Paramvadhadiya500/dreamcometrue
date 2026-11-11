@@ -756,4 +756,15 @@ const { checkJwtSecret, DEV_SECRET } = require("./config");
   assert.ok(!checkJwtSecret(prod({ JWT_SECRET: "abc-secret-value" })).problem.includes("abc-secret-value"));
 }
 
+// ======================= db.js: a Postgres restart must not crash the app =======================
+{
+  // the pool connects lazily, so a dummy address is enough: no database is contacted here
+  if (!process.env.DATABASE_URL) process.env.DATABASE_URL = "postgres://test:test@127.0.0.1:1/none";
+  const pool = require("./db");
+  assert.ok(pool.listenerCount("error") >= 1, "db.js listens for pool errors (without it, a Postgres restart kills the process)");
+  assert.doesNotThrow(() => pool.emit("error", new Error("simulated lost connection (this line is expected in the test output)")));
+  assert.strictEqual(pool.options.connectionTimeoutMillis, 5000, "a hung database fails after 5 s instead of waiting forever");
+  pool.end();
+}
+
 console.log("All tests passed");
