@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - Deployed the new scorer page and checked it on a real phone (by hand)
+- **What:** normal deploy of `7670f29` (only the app restarted). Real-phone check with a temporary test match: scoring with signal, airplane mode + taps + phone locked, back online.
+- **Checked:** the user reported the deploy fine and everything working on the phone (entries arrived after airplane mode, texts and buttons fit the screen).
+- **Note for match days:** a scorer phone that had the page open before the deploy keeps the old page until it is reloaded; reload once after its waiting entries are sent.
+- **Undo:** see the part B entry below.
+
 ## 2026-11-11 - Scorer page uses the new queue (step 2, part B)
 - **What:** `public/scorer.html` now uses `public/queue.js`. The scorer sees: "N entries waiting to be sent"; after 30 s "Oldest: 45 s. Server is slow, trying again in 8 s." (yellow); after 2 min "NOT sent for 2 min. Check your signal. Do not close this page." (red); "50+ entries waiting. Please check the network."; at 500 "Not sent: 500 entries are already waiting." A red box lists entries that were NOT counted until the scorer taps "OK, I saw it". A stuck entry shows "Skip this entry" (asks first; the skipped entry is listed). Another scorer's entries are kept for them, with "Send them as me" / "Discard" (asks first; listed). Log out warns when entries are waiting. Works (with a warning) when phone storage is blocked. A tap no longer skips the waiting time after a failure; reconnecting sends at once. New `test-scorer-page.js` (run by `node test.js`) runs the real page script with a fake page, socket and clock.
 - **Why:** see part A; this makes the fixes visible to the scorer.
