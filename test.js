@@ -767,6 +767,112 @@ const { checkJwtSecret, DEV_SECRET } = require("./config");
   pool.end();
 }
 
+// ======================= Scorer phone queue (public/queue.js) =======================
+const { createQueue } = require("./public/queue");
+{
+  const memStore = () => { const m = {}; return { getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; };
+  const E = (id, extra) => ({ id, matchId: "m1", type: "point", team: "A", value: 1, ...extra });
+  let clock = 1000;
+  const st = memStore();
+  const q = createQueue({ storage: st, now: () => clock, random: () => 0 });
+
+  assert.deepStrictEqual(q.add(E("a1"), "rahul"), { ok: true });
+  q.add(E("a2"), "rahul");
+  assert.strictEqual(q.status("rahul").waiting, 2);
+  assert.deepStrictEqual(Object.keys(q.payload(q.head("rahul"))).sort(), ["data", "id", "matchId", "team", "type", "value"],
+    "only the fields the server knows are sent");
+
+  // no answer: retried with the SAME id, waiting 2, 4, 8, 16, 30, 30 seconds
+  const delays = [];
+  for (let i = 0; i < 6; i++) {
+    const r = q.result(q.head("rahul"), null);
+    assert.strictEqual(r.action, "retry");
+    assert.strictEqual(q.head("rahul").id, "a1", "same entry, same id on every retry");
+    delays.push(r.delay);
+  }
+  assert.deepStrictEqual(delays, [2000, 4000, 8000, 16000, 30000, 30000]);
+  assert.strictEqual(q.status("rahul").stuck, false, "no answer (bad network) never counts as stuck");
+  clock += 45000;
+  assert.strictEqual(q.status("rahul").oldestMs, 45000);
+
+  // a good answer removes the entry; the next one starts fresh
+  assert.strictEqual(q.result(q.head("rahul"), { ok: true, state: {} }).action, "sent");
+  assert.strictEqual(q.head("rahul").id, "a2");
+  assert.strictEqual(q.result(q.head("rahul"), null).delay, 2000, "backoff starts again at 2 s");
+
+  // an answer without a clear ok is NOT treated as success
+  assert.strictEqual(q.result(q.head("rahul"), {}).action, "retry");
+  assert.strictEqual(q.result(q.head("rahul"), undefined).action, "retry");
+  assert.strictEqual(q.result(q.head("rahul"), { ok: false, error: "server error", retry: true }).action, "retry");
+
+  // a clear "no" from the server: kept in the rejected list, the rest continues
+  q.add(E("a3"), "rahul");
+  assert.strictEqual(q.result(q.head("rahul"), { ok: false, error: "match already finished" }).action, "rejected");
+  assert.strictEqual(q.head("rahul").id, "a3");
+  assert.deepStrictEqual(q.rejected().map((x) => [x.id, x.error]), [["a2", "match already finished"]]);
+
+  // an old answer for an entry that is no longer first is ignored
+  assert.strictEqual(q.result(E("a2"), { ok: true }).action, "ignored");
+  assert.strictEqual(q.head("rahul").id, "a3");
+
+  // page reload: a new queue on the same storage still has everything
+  const q2 = createQueue({ storage: st, now: () => clock, random: () => 0 });
+  assert.strictEqual(q2.head("rahul").id, "a3");
+  assert.strictEqual(q2.rejected().length, 1);
+  q2.ackRejected();
+  assert.strictEqual(q2.rejected().length, 0, "the scorer tapped 'OK, I saw it'");
+
+  // stuck entry: 20 server "try again" answers in a row -> stuck, but never dropped by itself
+  for (let i = 0; i < 19; i++) q2.result(q2.head("rahul"), { ok: false, retry: true, error: "server error" });
+  assert.strictEqual(q2.status("rahul").stuck, false);
+  q2.result(q2.head("rahul"), { ok: false, retry: true, error: "server error" });
+  assert.strictEqual(q2.status("rahul").stuck, true);
+  assert.strictEqual(q2.head("rahul").id, "a3", "a stuck entry stays until the scorer decides");
+  q2.skipHead("rahul");
+  assert.strictEqual(q2.head("rahul"), null);
+  assert.deepStrictEqual(q2.rejected().map((x) => x.id), ["a3"], "a skipped entry is listed as not counted");
+
+  // another scorer's entries on the same phone are not sent under this login
+  q2.add(E("n1"), "neha");
+  q2.add(E("n2"), "neha");
+  assert.strictEqual(q2.head("rahul"), null);
+  assert.deepStrictEqual(q2.status("rahul").others, { neha: 2 });
+  assert.strictEqual(q2.head("neha").id, "n1", "they are sent when neha logs in again");
+  q2.discardOthers("rahul");
+  assert.deepStrictEqual(q2.status("rahul").others, {});
+  assert.deepStrictEqual(q2.rejected().slice(-2).map((x) => x.id), ["n1", "n2"], "discarded entries are listed, not silently lost");
+  q2.add(E("n3"), "neha");
+  q2.adoptOthers("rahul");
+  assert.strictEqual(q2.head("rahul").id, "n3", "'send them as me'");
+
+  // entries saved by the OLD page (no user field) belong to whoever is logged in
+  const old = memStore();
+  old.setItem("scorer-queue", JSON.stringify([{ id: "old1", matchId: "m1", type: "point", team: "A", value: 1 }]));
+  assert.strictEqual(createQueue({ storage: old, now: () => clock }).head("anyone").id, "old1");
+
+  // limits: warn at warnAt, refuse new taps at maxSize, never drop to make room
+  const q4 = createQueue({ storage: memStore(), now: () => clock, warnAt: 3, maxSize: 5 });
+  for (let i = 0; i < 5; i++) assert.deepStrictEqual(q4.add(E("x" + i), "rahul"), { ok: true });
+  assert.strictEqual(q4.status("rahul").warn, true);
+  assert.deepStrictEqual(q4.add(E("x5"), "rahul"), { ok: false, reason: "full" });
+  assert.strictEqual(q4.status("rahul").waiting, 5, "nothing was thrown away");
+  assert.strictEqual(q4.head("rahul").id, "x0");
+  assert.strictEqual(createQueue({ storage: memStore() }).status("rahul").warn, false);
+
+  // the rejected list keeps only the newest 20
+  const q6 = createQueue({ storage: memStore(), now: () => clock });
+  for (let i = 0; i < 25; i++) { q6.add(E("r" + i), "rahul"); q6.result(q6.head("rahul"), { ok: false, error: "not allowed" }); }
+  assert.strictEqual(q6.rejected().length, 20);
+  assert.strictEqual(q6.rejected()[19].id, "r24");
+
+  // phone storage blocked (private mode): still works in memory, and says so
+  const blocked = { getItem() { throw new Error("denied"); }, setItem() { throw new Error("quota"); } };
+  const q5 = createQueue({ storage: blocked, now: () => clock });
+  assert.deepStrictEqual(q5.add(E("p1"), "rahul"), { ok: true });
+  assert.strictEqual(q5.status("rahul").storageOk, false);
+  assert.strictEqual(q.status("rahul").storageOk, true);
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------

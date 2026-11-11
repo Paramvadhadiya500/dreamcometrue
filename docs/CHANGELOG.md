@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - Scorer queue logic as its own tested file (step 2, part A; not used by the page yet)
+- **What:** new `public/queue.js` (`createQueue`): same id on every retry; waits 2, 4, 8, 16, 30 s between tries; only a clear `ok:false` stops an entry and moves it to a "rejected" list kept until the scorer confirms; an unclear answer is retried, never treated as success; warn at 50 waiting, refuse new taps at 500, never drop entries; 20 server "retry" answers = "stuck" (the scorer may skip it, and it is listed); entries remember their scorer; works in memory when phone storage is blocked. Same storage key and item shape as the old page (`scorer-queue`), so a rollback keeps unsent entries. Tests in `test.js`.
+- **Why:** today a rejected entry is lost after a message the next tap wipes; one failing entry blocks all others forever; another scorer's old entries are sent under the new login; fixed 2 s retries forever.
+- **Checked:** `node test.js`: All tests passed (new section covers every rule above, reload, old-page entries, limits, blocked storage).
+- **Undo:** `git revert <this commit>` (nothing uses the file yet).
+
 ## 2026-11-11 - Deployed `/ready` and set up UptimeRobot (by hand)
 - **What:** server: normal deploy of `db6f4c1` (only the app restarted; db and redis kept running). UptimeRobot: HTTP(s) monitor on `https://<server>/ready`, every 5 minutes, email alerts. A temporary monitor on a missing page was used to test the alert, then deleted.
 - **Why:** to get an email when the site, its database or Redis stops answering.
