@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - Deployed `/ready` and set up UptimeRobot (by hand)
+- **What:** server: normal deploy of `db6f4c1` (only the app restarted; db and redis kept running). UptimeRobot: HTTP(s) monitor on `https://<server>/ready`, every 5 minutes, email alerts. A temporary monitor on a missing page was used to test the alert, then deleted.
+- **Why:** to get an email when the site, its database or Redis stops answering.
+- **Checked:** `/ready` on the server -> `{"ok":true,"failed":[]}`; `security-check.sh` 27 passed, 0 warnings, 0 failed; UptimeRobot monitor Up; the test DOWN email arrived.
+- **When stopping the server on purpose:** pause the UptimeRobot monitor and the healthchecks.io check first.
+- **Undo:** delete or pause the monitor on uptimerobot.com.
+
 ## 2026-11-11 - `/ready` page for the uptime monitor (step 3c)
 - **What:** new `ready.js` and `GET /ready` in `server.js`: 200 `{"ok":true,"failed":[]}` when Postgres AND Redis answer within 2 s, otherwise 503 with the failed part (`db` / `redis`). Checks run at most once per 2 s. `security-check.sh` fails if `/ready` is not 200. The deploy check in `DEPLOY.md` and `CONTRIBUTING.md` now uses `/ready` (the old `curl http://localhost/health` only got Caddy's HTTPS redirect). New guide `docs/MONITORING.md` (UptimeRobot). `test.js` now waits for async tests before printing `All tests passed`.
 - **Why:** `/health` says "ok" even when the database or Redis is down; nobody was told when the site broke.
