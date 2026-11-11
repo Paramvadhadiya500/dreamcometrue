@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - `/ready` page for the uptime monitor (step 3c)
+- **What:** new `ready.js` and `GET /ready` in `server.js`: 200 `{"ok":true,"failed":[]}` when Postgres AND Redis answer within 2 s, otherwise 503 with the failed part (`db` / `redis`). Checks run at most once per 2 s. `security-check.sh` fails if `/ready` is not 200. The deploy check in `DEPLOY.md` and `CONTRIBUTING.md` now uses `/ready` (the old `curl http://localhost/health` only got Caddy's HTTPS redirect). New guide `docs/MONITORING.md` (UptimeRobot). `test.js` now waits for async tests before printing `All tests passed`.
+- **Why:** `/health` says "ok" even when the database or Redis is down; nobody was told when the site broke.
+- **Checked:** unit tests (all up, one or both failing, a check that throws, a check that never answers -> failed after the limit, 2 s cache). Real app in Docker: all up 200; Redis stopped 503 `["redis"]`; back 200; Postgres stopped 503 `["db"]`; back 200; app never restarted; `/health` 200 throughout.
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d` (only the app restarts).
+
 ## 2026-11-11 - Deployed step 1e on the server (by hand)
 - **What:** `git pull`, `docker compose build`, `migrate.js` (nothing new), `up -d`. Postgres and Redis were recreated once (about 11 s).
 - **Checked:** `docker compose ps`: db and redis `(healthy)`, app started only after them; app log `http://localhost:3000`; `security-check.sh`: 26 passed, 0 warnings, 0 failed.

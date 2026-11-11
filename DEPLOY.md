@@ -43,8 +43,8 @@ docker compose build
 docker compose run --rm app ls migrations       # the new file must be listed (proves it is inside the image)
 docker compose run --rm app node migrate.js     # must print "applied ..." for every new migration file
 docker compose up -d
-docker compose ps                               # all four running
-curl -s http://localhost/health
+docker compose ps                               # all four running, db and redis "(healthy)"
+docker compose exec -T app wget -qO- http://localhost:3000/ready; echo   # must print {"ok":true,"failed":[]}
 ```
 Never `up -d --build` BEFORE `migrate.js`: that starts new code on the old database (lesson 5).
 Rule for migrations: they may only ADD things (tables, columns). The old app keeps running until `up -d`, so it must still work on the new schema.

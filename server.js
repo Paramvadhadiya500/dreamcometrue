@@ -13,6 +13,7 @@ const { competitionOf } = require("./standings");
 const { createAdminRouter } = require("./admin");
 const { FailureLimiter } = require("./rateLimit");
 const { checkJwtSecret } = require("./config");
+const { createReadyCheck } = require("./ready");
 
 // In production (the Docker image sets NODE_ENV=production) a missing, default or short secret stops the server.
 // On a laptop it only warns, so `npm start` keeps working.
@@ -287,6 +288,17 @@ app.get("/api/matches", async (req, res) => {
 
 // ---------- simple health check (useful later for the load balancer) ----------
 app.get("/health", (req, res) => res.json({ ok: true, port: PORT }));
+
+// ---------- readiness: do the database AND Redis answer? (for the uptime monitor) ----------
+// 200 {"ok":true,"failed":[]}  or  503 {"ok":false,"failed":["db"]}. Each check has 2 s; result cached 2 s.
+const readyCheck = createReadyCheck({
+  checks: { db: () => pool.query("SELECT 1"), redis: () => cache.ping() },
+});
+app.get("/ready", async (req, res) => {
+  const r = await readyCheck();
+  res.set("Cache-Control", "no-store");
+  res.status(r.ok ? 200 : 503).json(r);
+});
 
 // ---------- when the admin changes a match: refresh caches and tell the viewers ----------
 const home = createHome({ pool, getState, getEngine });

@@ -767,4 +767,35 @@ const { checkJwtSecret, DEV_SECRET } = require("./config");
   pool.end();
 }
 
-console.log("All tests passed");
+// ======================= async tests (the summary line waits for them) =======================
+(async () => {
+  // ---------- /ready: are the database and Redis answering? ----------
+  const { createReadyCheck } = require("./ready");
+  const ok = () => Promise.resolve("PONG");
+  const broken = () => Promise.reject(new Error("connection refused"));
+  const hangs = () => new Promise(() => {});                  // never answers
+  const throwsAtOnce = () => { throw new Error("client is closed"); };
+
+  assert.deepStrictEqual(await createReadyCheck({ checks: { db: ok, redis: ok } })(), { ok: true, failed: [] });
+  assert.deepStrictEqual(await createReadyCheck({ checks: { db: ok, redis: broken } })(), { ok: false, failed: ["redis"] });
+  assert.deepStrictEqual(await createReadyCheck({ checks: { db: broken, redis: broken } })(), { ok: false, failed: ["db", "redis"] });
+  assert.deepStrictEqual(await createReadyCheck({ checks: { db: throwsAtOnce, redis: ok } })(), { ok: false, failed: ["db"] });
+
+  const t0 = Date.now();
+  const r = await createReadyCheck({ checks: { db: hangs, redis: ok }, timeoutMs: 100 })();
+  assert.deepStrictEqual(r, { ok: false, failed: ["db"] }, "a database that never answers counts as failed");
+  assert.ok(Date.now() - t0 < 1000, "and the answer comes after the time limit, not never");
+
+  // many visitors at once: the real checks run at most once per cacheMs
+  let calls = 0, clock = 1000;
+  const counted = () => { calls++; return Promise.resolve(); };
+  const check = createReadyCheck({ checks: { db: counted }, cacheMs: 2000, now: () => clock });
+  await Promise.all([check(), check(), check()]);
+  assert.strictEqual(calls, 1, "3 requests at the same moment run the check once");
+  clock += 1999; await check();
+  assert.strictEqual(calls, 1, "still cached just before 2 s");
+  clock += 1; await check();
+  assert.strictEqual(calls, 2, "checked again after 2 s");
+
+  console.log("All tests passed");
+})().catch((e) => { console.error(e); process.exit(1); });

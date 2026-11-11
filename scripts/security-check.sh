@@ -76,6 +76,9 @@ else
     if echo "$HEADERS" | grep -qi "^$h:"; then pass "header $h is set"; else warn "header $h is missing"; fi
   done
   if echo "$HEADERS" | grep -qi "^x-powered-by:"; then warn "the server announces its framework (x-powered-by)"; else pass "the framework name is hidden"; fi
+  RCODE="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$BASE/ready" 2>/dev/null)"
+  if [ "$RCODE" = "200" ]; then pass "/ready: the database and Redis answer"
+  else fail "/ready answered $RCODE (503 = database or Redis not answering). Details: curl -s $BASE/ready"; fi
 
   LAST=""
   for _ in 1 2 3 4 5 6; do

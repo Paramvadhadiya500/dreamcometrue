@@ -130,7 +130,8 @@ docker compose build
 docker compose run --rm app ls migrations
 docker compose run --rm app node migrate.js
 docker compose up -d
-docker compose ps ; curl -s http://localhost/health
+docker compose ps
+docker compose exec -T app wget -qO- http://localhost:3000/ready; echo
 ```
 
 Build first (migration files live inside the image), migrate second, start new code last. Migrations must only add things. Never `docker compose down -v`.
