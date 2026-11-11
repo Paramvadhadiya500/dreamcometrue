@@ -9,10 +9,16 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - CI runs the integration test (step 3a, part B)
+- **What:** `.github/workflows/test.yml` has a second job `integration`: GitHub starts its own Postgres 16 and Redis 7 for the run, then `npm ci` and `node test-integration.js` on Node 22.23. The `unit` job is unchanged. Test password only; no secrets in the workflow.
+- **Why:** so every push proves the scoring write path still works on the server's Node version, not only when someone remembers to run it on the laptop.
+- **Checked:** `actionlint` 1.7.7 (Docker): no problems. Same test on Node 22.23 in Docker on the laptop: All integration tests passed, `node test.js`: All tests passed. NOT checked yet: a real GitHub run (needs a push).
+- **Undo:** delete the `integration:` job from the file and push.
+
 ## 2026-11-11 - Integration test of the scoring write path (step 3a, part A; laptop only, not in CI yet)
 - **What:** new `test-integration.js` (`npm run test:integration`) starts the real `server.js` against a throwaway Postgres 16 + Redis 7 from the new `docker-compose.test.yml` (127.0.0.1 ports 55432/56379, data in memory, test password only) and scores like a phone with `socket.io-client`. No server code changed (black-box, decision 6). 8 cases: same id sent twice (stored and broadcast once); 2 scorers x 20 parallel actions (40 rows, each answer one step further: the row lock works); same id from 2 phones at once (1 row); undo and "nothing to undo"; finished match (simple engine: "match already finished", undo reopens it); unassigned scorer and disabled user refused, admin allowed; database switched off -> `retry:true`, server stays up, the same id succeeds afterwards. It refuses to run on a database whose name does not end in `_test`. `.dockerignore` keeps both files out of the image. `CONTRIBUTING.md`: how to run it; fixed "test.js = unit and integration tests".
 - **Why:** `applyAction`, the code that writes every score, had no test (problem 9).
-- **Checked:** laptop, Node 26: `All integration tests passed` (about 3 s), 5 clean runs in a row all passed; 8 deliberately broken copies of `server.js`/`db.js` (no duplicate check, no row lock, duplicate broadcast, disabled user allowed, unassigned scorer allowed, no pool error listener, errors without `retry`, undo on empty) each failed the matching case, then were restored with `git checkout`; the no-row-lock break failed 5 of 5 runs; guard refused a database named `livescore`; `node test.js`: All tests passed. Not checked: Node 22 (CI does that in part B).
+- **Checked:** laptop, Node 26: `All integration tests passed` (about 3 s); Node 22.23 in Docker: passed too, 5 clean runs in a row all passed; 8 deliberately broken copies of `server.js`/`db.js` (no duplicate check, no row lock, duplicate broadcast, disabled user allowed, unassigned scorer allowed, no pool error listener, errors without `retry`, undo on empty) each failed the matching case, then were restored with `git checkout`; the no-row-lock break failed 5 of 5 runs; guard refused a database named `livescore`; `node test.js`: All tests passed.
 - **Undo:** `git revert <this commit>` (test files only; nothing deployed).
 
 ## 2026-11-11 - Deployed the new scorer page and checked it on a real phone (by hand)
