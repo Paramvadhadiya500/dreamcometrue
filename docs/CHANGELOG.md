@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-11 - Integration test of the scoring write path (step 3a, part A; laptop only, not in CI yet)
+- **What:** new `test-integration.js` (`npm run test:integration`) starts the real `server.js` against a throwaway Postgres 16 + Redis 7 from the new `docker-compose.test.yml` (127.0.0.1 ports 55432/56379, data in memory, test password only) and scores like a phone with `socket.io-client`. No server code changed (black-box, decision 6). 8 cases: same id sent twice (stored and broadcast once); 2 scorers x 20 parallel actions (40 rows, each answer one step further: the row lock works); same id from 2 phones at once (1 row); undo and "nothing to undo"; finished match (simple engine: "match already finished", undo reopens it); unassigned scorer and disabled user refused, admin allowed; database switched off -> `retry:true`, server stays up, the same id succeeds afterwards. It refuses to run on a database whose name does not end in `_test`. `.dockerignore` keeps both files out of the image. `CONTRIBUTING.md`: how to run it; fixed "test.js = unit and integration tests".
+- **Why:** `applyAction`, the code that writes every score, had no test (problem 9).
+- **Checked:** laptop, Node 26: `All integration tests passed` (about 3 s), 5 clean runs in a row all passed; 8 deliberately broken copies of `server.js`/`db.js` (no duplicate check, no row lock, duplicate broadcast, disabled user allowed, unassigned scorer allowed, no pool error listener, errors without `retry`, undo on empty) each failed the matching case, then were restored with `git checkout`; the no-row-lock break failed 5 of 5 runs; guard refused a database named `livescore`; `node test.js`: All tests passed. Not checked: Node 22 (CI does that in part B).
+- **Undo:** `git revert <this commit>` (test files only; nothing deployed).
+
 ## 2026-11-11 - Deployed the new scorer page and checked it on a real phone (by hand)
 - **What:** normal deploy of `7670f29` (only the app restarted). Real-phone check with a temporary test match: scoring with signal, airplane mode + taps + phone locked, back online.
 - **Checked:** the user reported the deploy fine and everything working on the phone (entries arrived after airplane mode, texts and buttons fit the screen).

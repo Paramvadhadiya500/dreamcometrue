@@ -6,6 +6,8 @@ node_modules
 loadtest.js
 test.js
 test-scorer-page.js
+test-integration.js
+docker-compose.test.yml
 *.pem
 backups
 *.sql.gz

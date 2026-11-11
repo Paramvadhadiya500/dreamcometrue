@@ -75,6 +75,16 @@ A volunteer scorer enters events (a cricket ball, a table tennis point) on a pho
 
    Must print: `All tests passed`
 
+   Integration test (the real server against a throwaway Postgres and Redis in Docker; does not touch your own database):
+
+   ```powershell
+   docker compose -f docker-compose.test.yml up -d --wait
+   npm run test:integration
+   docker compose -f docker-compose.test.yml down
+   ```
+
+   Must print: `All integration tests passed`. It refuses to run on a database whose name does not end in `_test`.
+
 7. **Start the server:**
 
    ```powershell
@@ -156,7 +166,9 @@ engines/
 db.js             PostgreSQL pool (reads DATABASE_URL)
 rateLimit.js      In-memory sliding-window failure counter
 migrate.js        Applies migrations in order
-test.js           All unit and integration tests
+test.js           Unit tests (no database needed)
+test-integration.js  Scoring write path against a real Postgres + Redis (see section 2, step 6)
+docker-compose.test.yml  Throwaway Postgres + Redis for test-integration.js (high ports, data in memory)
 loadtest-real.js  Realistic traffic simulator (use on a load machine, not in production)
 scripts/          Server-side shell scripts (backup, restore, snapshot, security-check, …)
 migrations/       Numbered SQL files
