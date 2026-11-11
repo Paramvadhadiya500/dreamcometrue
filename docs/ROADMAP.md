@@ -2,6 +2,8 @@
 
 This is not a promise. It is a list of things the owner wants to do, roughly grouped by urgency. Items marked **[newcomer-friendly]** are good first tasks for a contributor.
 
+Last updated: 2026-11-12. What was finished and when: see "Done" at the end and `docs/CHANGELOG.md`.
+
 ---
 
 ## Now — before the event (highest priority)
@@ -10,11 +12,8 @@ These are needed for the first real sports month.
 
 | Item | Why | Notes |
 |---|---|---|
-| **HTTPS + domain** | Scorer and admin passwords travel in plain text over HTTP right now. This is a known gap — the event must not go live without HTTPS. | Caddy + Let's Encrypt is already wired up. Set `DOMAIN` in `.env`. See `LESSON_12.md`. |
-| **Replace all demo / placeholder passwords** | `seed.js` creates accounts with known weak passwords. Any that remain on the server are a serious risk. | Run `node check-passwords.js` and `scripts/security-check.sh` before the event. |
-| **Full mock event (rehearsal)** | Real problems appear in rehearsal, not in tests. The rehearsal list is in `LESSON_12.md` section 10. | Needs at least 3 scorers with real phones, real server, and a person with a stopwatch. |
-| **Confirm hourly backup cron** | Backups protect against accidental deletes and wrong data. The cron must be installed and verified before the event. | `./scripts/install-cron.sh` on the server; check `crontab -l` and that a file appears in `~/backups`. |
-| **Copy backups off the server** | A backup on the same server does not help if the server is lost. | `scp` to laptop before the event and after every important session. |
+| **Real domain name** | HTTPS is on, but on the bare server IP address. Let's Encrypt gives an IP address only a 6-day certificate (`Caddyfile`, `shortlived`): if one renewal fails, every browser shows an error within days. A domain gets a normal 90-day certificate. | Buy a domain, point its DNS A record at the server IP, then in the server `.env` set `DOMAIN=<domain>` and `ACME_PROFILE=classic`, then `docker compose up -d caddy`. Rollback: `DEPLOY.md` section E. Update the UptimeRobot monitor to the new address. |
+| **Full mock event (rehearsal)** | Real problems appear in rehearsal, not in tests. The rehearsal list is section 10 of the old Lesson 12 notes: `git show 84620c3^:LESSON_12.md` (the file was removed from the repo in `84620c3`). | Needs at least 3 scorers with real phones, real server, and a person with a stopwatch. Run `./scripts/security-check.sh` on the server the day before (it also checks for demo passwords). |
 | **Official load-test pass at 2,000 students** | 500, 1,000 and 2,000 have informally passed but should be re-confirmed on the final server size. 5,000 looks healthy but is not an official pass. | Run `loadtest-real-fixed.js` from an EC2 machine in Mumbai (same region as the server). |
 
 ---
@@ -26,8 +25,8 @@ These improve reliability and coverage.
 | Item | Why | Notes | Newcomer? |
 |---|---|---|---|
 | **Football engine** | Football is a common college sport. Halves, goals, possibly yellow/red cards. | Build `engines/football.js` with `compute`, `validate`, `result`, `headline`. Add tests. | **[newcomer-friendly]** |
-| **More sport engines (target ~15–20 total)** | The sports month has 20+ events. Currently only cricket, table tennis and "simple" are specific engines. | Use `simple` for any sport where a scorer just adds points. Add specific engines only where the rules need it (halves, sets, etc.). | Partly newcomer-friendly |
-| **Generic "simple" scoring for remaining sports** | Most outdoor sports (kabaddi, volleyball, basketball, throwball, …) can use the existing `simple` engine. | Confirm with the owner which sports need a specific engine and which can use `simple`. | |
+| **More sport engines (target ~15–20 total)** | The sports month has 20+ events. Currently only cricket, table tennis, volleyball and "simple" are engines (`engines/`). | Use `simple` for any sport where a scorer just adds points. Add specific engines only where the rules need it (halves, sets, etc.). | Partly newcomer-friendly |
+| **Generic "simple" scoring for remaining sports** | Most outdoor sports (kabaddi, basketball, throwball, …) can use the existing `simple` engine. | Confirm with the owner which sports need a specific engine and which can use `simple`. | |
 | **Official load-test pass at 5,000 students** | The 5,000-student run looked healthy but was not declared a formal pass. | Repeat on a 4 GiB server in the same region. Use `loadtest-real-fixed.js` and `--procs 2`. | |
 | **Keep load-test tools in the repo** | `loadtest-real-fixed.js` and `loadtest-real-diag.js` exist in the repo. Keep them maintained and document how to run them. Update the capacity numbers table in `docs/ARCHITECTURE.md` after each real test. | | |
 | **Fix `watch-load.sh` connection counter** | The `ss` command reads host network stats but Docker hides the connections. The counter always shows 0. | Run `ss` inside the Caddy container instead, or drop the counter. See `docs/LESSONS.md`. | **[newcomer-friendly]** |
@@ -40,10 +39,7 @@ These are important for a production-quality service but are not urgent for the 
 
 | Item | Why | Notes | Newcomer? |
 |---|---|---|---|
-| **Backups off the server (automated)** | Currently backups are on the same disk as the data. If the server or disk fails, both are lost. | Options: AWS S3, `rclone` to Google Drive, or a scheduled `scp` to a second machine. | |
-| **Monitoring and uptime alerts** | The owner finds out the site is down when a scorer calls. | A simple uptime check (e.g. UptimeRobot free tier) that sends a WhatsApp or email alert. | **[newcomer-friendly]** |
-| **Staging environment** | Currently code goes straight from laptop to production. A staging environment (a second, cheap EC2 instance) would catch problems before they reach students. | Could be as simple as a second Docker Compose stack on a small instance, torn down after testing. | |
-| **CI (automated tests on push)** | Right now `node test.js` is run manually. A GitHub Actions workflow would catch regressions automatically. | A single YAML file in `.github/workflows/`. | **[newcomer-friendly]** |
+| **Staging environment** | CI now tests every push, but a tested commit still goes straight to production. A staging environment (a second, cheap EC2 instance) would catch deploy and real-network problems before they reach students. | Could be as simple as a second Docker Compose stack on a small instance, torn down after testing. | |
 | **Content-Security-Policy header** | A CSP prevents certain XSS attacks. It is not set yet because it needs careful testing to avoid breaking the pages on real phones. | Test thoroughly in a staging environment before enabling on production. | |
 | **Admin audit page** | The `events` table already records `by_user` for every action. An admin page to browse recent actions would help investigate disputes. | Read-only DB query, displayed in the admin panel. | **[newcomer-friendly]** |
 | **Login rate-limit counters in Redis** | Currently the counters are in memory. Restarting the app clears them; two servers would not share them. | Move `FailureLimiter` to Redis if the server is ever scaled horizontally. | |
@@ -51,6 +47,20 @@ These are important for a production-quality service but are not urgent for the 
 | **Team list / name management** | Currently team names are typed free-form. The same team can appear as "CSE" and "CSE Department" and they will count as different teams in the points table. | A managed list of team names for each competition. Big UI change. | |
 | **10,000-student load test** | The 10,000 figure is calculated, not measured. A real test at that scale requires a 4 GiB server and multiple load machines. | Coordinate with the owner for a quiet time on the server. | |
 | **CloudFront for `/api/home`** | At very high traffic the home-page endpoint could be fronted by a CDN to reduce server load. | Only if the server is genuinely struggling at event load. Probably unnecessary at current scale. | |
+
+---
+
+## Done (details and undo steps in `docs/CHANGELOG.md`)
+
+| Item | When | What exists now |
+|---|---|---|
+| HTTPS | code 2026-10-15 (Lesson 12); confirmed live 2026-11-11 | Caddy + Let's Encrypt on the server IP address (a real domain is still in "Now") |
+| No demo / weak passwords | 2026-11-11 | `scripts/security-check.sh` runs `check-passwords.js`; last run: 0 failed |
+| Hourly backups that can be trusted | 2026-11-10 | Cron installed and checked; only complete backups are kept; the newest 3 are never pruned; restore drill passed (`docs/BACKUPS.md`) |
+| Backups off the server | 2026-11-11 | Every backup is copied to a private S3 bucket (30 days); healthchecks.io emails when backups stop |
+| Uptime alerts | 2026-11-11 | `/ready` checks Postgres and Redis; UptimeRobot emails when it fails (`docs/MONITORING.md`) |
+| CI | 2026-11-11 | GitHub Actions on every push: `node test.js` and the integration test (`test-integration.js`) on Node 22.23 |
+| Scorer phone never loses an entry silently | 2026-11-11 | Backoff, rejected-entry list, stuck-entry button, per-scorer entries (`public/queue.js`) |
 
 ---
 

@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Roadmap brought up to date (docs only)
+- **What:** `docs/ROADMAP.md`: new "Done" table (HTTPS, no demo passwords, trusted hourly backups, S3 copy + heartbeat, uptime alerts, CI, scorer queue). "Now" is down to: real domain name (the IP address only gets a 6-day certificate), mock event, 2,000-student load test. The rehearsal list now points to `git show 84620c3^:LESSON_12.md` (that file was deleted). Volleyball is listed as an engine. The staging row no longer says tests are run by hand.
+- **Why:** it still listed finished work as open (HTTP passwords, off-server backups, monitoring, CI) and pointed to a deleted file.
+- **Checked:** every claim against the repo and this changelog (`engines/volleyball.js` exists; `security-check.sh` runs `check-passwords.js`; `git show 84620c3^:LESSON_12.md` has section 10 "Mock event"). `node test.js`: All tests passed.
+- **Undo:** `git revert <this commit>`.
+
 ## 2026-11-11 - CI runs the integration test (step 3a, part B)
 - **What:** `.github/workflows/test.yml` has a second job `integration`: GitHub starts its own Postgres 16 and Redis 7 for the run, then `npm ci` and `node test-integration.js` on Node 22.23. The `unit` job is unchanged. Test password only; no secrets in the workflow.
 - **Why:** so every push proves the scoring write path still works on the server's Node version, not only when someone remembers to run it on the laptop.
