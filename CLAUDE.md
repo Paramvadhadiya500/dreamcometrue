@@ -11,4 +11,8 @@ Rules
 - Never edit an applied migration; add a new numbered one.
 - Small changes. Run `node test.js` after changing engines or server code
   and show me the result.
+- After EVERY change (a commit, or something done by hand on the server/AWS),
+  add an entry at the top of docs/CHANGELOG.md: What / Why / Checked / Undo.
+  No secrets there (the repo is public).
+- Never `git push` without asking me first.
 When compacting, keep: test output, changed files, open questions.
