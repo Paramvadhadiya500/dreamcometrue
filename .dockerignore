@@ -5,6 +5,7 @@ node_modules
 *.log
 loadtest.js
 test.js
+test-scorer-page.js
 *.pem
 backups
 *.sql.gz

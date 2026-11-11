@@ -24,6 +24,13 @@
   .hint { color: #630; min-height: 22px; padding: 0 12px; }
   button.names { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vs { font-size: 18px; font-weight: bold; }
+  /* sending status and warnings */
+  #pending { padding: 6px 8px; border-radius: 4px; }
+  #pending.slow { background: #fd8; }
+  #pending.alarm, .alarm { background: #c33; color: white; font-weight: bold; }
+  .alarm, .note { padding: 8px 10px; margin: 6px 0; border-radius: 4px; }
+  .note { background: #def; }
+  .alarm button, .note button { font-size: 16px; padding: 10px 14px; margin: 6px 6px 0 0; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -38,7 +45,7 @@
   <div id="conn" class="bad">Connecting...</div>
   <div class="box">
     <small id="who"></small>
-    <button onclick="logout()" style="width:auto; font-size:14px; padding:4px 10px">Log out</button><br>
+    <button onclick="logoutClicked()" style="width:auto; font-size:14px; padding:4px 10px">Log out</button><br>
     <select id="match"></select>
 
     <h2 id="name"></h2>
@@ -64,6 +71,20 @@
 
     <p id="status"></p>
     <p id="pending"></p>
+    <div id="storageWarn" class="alarm" style="display:none">This phone cannot save entries (private mode or storage blocked). Do NOT reload or close this page until all entries are sent.</div>
+    <div id="rejBox" class="alarm" style="display:none">
+      <div id="rejText"></div>
+      <button onclick="ackRejected()">OK, I saw it</button>
+    </div>
+    <div id="stuckBox" class="alarm" style="display:none">
+      <div id="stuckText"></div>
+      <button onclick="skipStuck()">Skip this entry</button>
+    </div>
+    <div id="othersBox" class="note" style="display:none">
+      <div id="othersText"></div>
+      <button onclick="adoptOthers()">Send them as me</button>
+      <button onclick="discardOthers()">Discard</button>
+    </div>
     <p id="err" class="err"></p>
   </div>
 
@@ -110,15 +131,26 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/queue.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   const sel = $("match");
 
-  const QKEY = "scorer-queue", SKEY = "scorer-session";
-  let queue = JSON.parse(localStorage.getItem(QKEY) || "[]");
-  let session = JSON.parse(localStorage.getItem(SKEY) || "null");
+  // phone storage; some browsers block it (private mode). Then the queue works in memory and the page says so.
+  const store = (() => {
+    try { const s = window.localStorage; s.getItem("probe"); return s; }
+    catch (e) { return { getItem() { throw e; }, setItem() { throw e; }, removeItem() {} }; }
+  })();
+  const SKEY = "scorer-session";
+  const q = ScorerQueue.createQueue({ storage: store });     // public/queue.js (tested in test.js)
+  let session = null;
+  try { session = JSON.parse(store.getItem(SKEY) || "null"); } catch (e) { session = null; }
+  function saveSession() { try { store.setItem(SKEY, JSON.stringify(session)); } catch (e) { /* works until reload */ } }
   let socket = null;
   let sending = false;
+  let retryTimer = null;    // next try after a failed send
+  let nextTryAt = 0;
+  let tickTimer = null;     // refreshes "oldest: 45 s" once a second
   const latest = {};
 
   // ---------- login / logout ----------
@@ -133,7 +165,7 @@
       const data = await r.json();
       if (!r.ok) { $("loginErr").textContent = data.error || "login failed"; return; }
       session = data;
-      localStorage.setItem(SKEY, JSON.stringify(session));
+      saveSession();
       $("p").value = "";
       start();
     } catch (e) {
@@ -154,7 +186,7 @@
       const same = list.length === sel.options.length && list.every((m, i) => sel.options[i].value === m.id && sel.options[i].textContent === m.name);
       if (same) return;
       session.matches = list;
-      localStorage.setItem(SKEY, JSON.stringify(session));
+      saveSession();
       sel.innerHTML = "";
       for (const m of list) {
         const o = document.createElement("option");
@@ -168,24 +200,34 @@
     } catch (e) { /* offline: keep the list we have */ }
   }
 
+  // the Log out button: warn first if entries are still waiting (they stay on the phone)
+  function logoutClicked() {
+    const s = session ? q.status(session.username) : null;
+    if (s && s.waiting > 0 && !confirm("You have " + s.waiting + " unsent entries. They stay on this phone, but nothing is sent until you log in again. Log out anyway?")) return;
+    logout();
+  }
+
+  // also used when the login has expired (no question then)
   function logout() {
     if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
-    localStorage.removeItem(SKEY);
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    try { store.removeItem(SKEY); } catch (e) { /* ignore */ }
     session = null;
     if (socket) { socket.disconnect(); socket = null; }
     $("app").style.display = "none";
     $("loginBox").style.display = "block";
   }
 
-  // ---------- queue (same idea as Lesson 4) ----------
-  function save() { localStorage.setItem(QKEY, JSON.stringify(queue)); render(); }
+  // ---------- queue (logic in public/queue.js) ----------
   function newId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10); }
 
   function act(type, team, value, data) {
-    if (!sel.value) return;
-    queue.push({ id: newId(), matchId: sel.value, type, team, value, data });
-    save();
-    flush();
+    if (!sel.value || !session) return;
+    const r = q.add({ id: newId(), matchId: sel.value, type, team, value, data }, session.username);
+    $("err").textContent = r.ok ? "" : "Not sent: 500 entries are already waiting. Wait for the network.";
+    render();
+    if (r.ok) flush();
   }
 
   function finishMatch() {
@@ -200,19 +242,63 @@
     }
   }
 
-  function flush() {
-    if (sending || queue.length === 0 || !socket || !socket.connected) return;
+  // sends the first waiting entry. force = called by the retry timer or a fresh connection;
+  // a normal tap does not jump the waiting time after a failure.
+  function flush(force) {
+    if (sending || !session || !socket || !socket.connected) return;
+    if (retryTimer && !force) return;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    const item = q.head(session.username);
+    if (!item) return;
     sending = true;
-    const item = queue[0];
 
-    socket.timeout(5000).emit("score:action", item, (err, res) => {
+    socket.timeout(5000).emit("score:action", q.payload(item), (err, res) => {
       sending = false;
-      if (err || res.retry) { setTimeout(flush, 2000); return; }   // no answer, or a temporary server problem: retry later
-      $("err").textContent = res.ok ? "" : "Rejected: " + res.error;
-      queue.shift();
-      save();
-      flush();
+      const r = q.result(item, err ? null : res);      // same entry, same id, until the server clearly answers
+      if (r.action === "retry") {
+        nextTryAt = Date.now() + r.delay;
+        retryTimer = setTimeout(() => { retryTimer = null; flush(true); }, r.delay);
+      } else {
+        nextTryAt = 0;
+        flush();
+      }
+      render();
     });
+  }
+
+  // ---------- the boxes: rejected, stuck, other scorer's entries ----------
+  function entryText(x) {
+    const m = ((session && session.matches) || []).find((mm) => mm.id === x.matchId);
+    let t;
+    try {
+      if (x.type === "ball" && x.data) t = describe(x.data);
+      else if (x.type === "point") t = "+" + (x.value || 1) + " for team " + x.team;
+      else if (x.type === "undo") t = "UNDO";
+      else if (x.type === "finish") t = "Finish match" + (x.data && x.data.winner ? " (team " + x.data.winner + " wins)" : "");
+      else if (x.type === "end_innings") t = "End innings";
+      else t = String(x.type);
+    } catch (e) { t = String(x.type); }
+    return (m ? m.name + ": " : "") + t;
+  }
+
+  function ackRejected() { q.ackRejected(); render(); }
+
+  function skipStuck() {
+    const h = session && q.head(session.username);
+    if (!h) return;
+    if (!confirm("Skip this entry: " + entryText(h) + "?\nIt will NOT be counted. It stays in the 'not counted' list so you can enter it again.")) return;
+    q.skipHead(session.username);
+    render();
+    flush(true);
+  }
+
+  function adoptOthers() { q.adoptOthers(session.username); render(); flush(true); }
+
+  function discardOthers() {
+    const n = Object.values(q.status(session.username).others).reduce((a, b) => a + b, 0);
+    if (!confirm("Discard " + n + " entries of the other scorer? They will NOT be counted (they stay in the 'not counted' list).")) return;
+    q.discardOthers(session.username);
+    render();
   }
 
   // ---------- cricket scoring ----------
@@ -336,12 +422,60 @@
 
   // ---------- connection + display ----------
   function render() {
+    if (!session) return;
     const online = socket && socket.connected;
+    const s = q.status(session.username);
     $("conn").className = online ? "ok" : "bad";
     $("conn").textContent = online ? "Connected" : "OFFLINE - entries are saved on this phone";
-    $("pending").textContent = queue.length
-      ? queue.length + " entries waiting to be sent"
-      : "All entries sent";
+
+    // how many entries wait, and for how long
+    const p = $("pending");
+    const sec = Math.floor(s.oldestMs / 1000);
+    let text = "All entries sent", cls = "";
+    if (s.waiting > 0) {
+      const n = s.waiting + (s.waiting === 1 ? " entry" : " entries");
+      if (s.oldestMs >= 120000) {
+        text = n + " NOT sent for " + Math.floor(sec / 60) + " min. Check your signal. Do not close this page.";
+        cls = "alarm";
+      } else if (s.oldestMs >= 30000) {
+        const wait = nextTryAt ? Math.max(1, Math.ceil((nextTryAt - Date.now()) / 1000)) : 0;
+        text = n + " waiting. Oldest: " + sec + " s." + (online && wait ? " Server is slow, trying again in " + wait + " s." : "");
+        cls = "slow";
+      } else {
+        text = n + " waiting to be sent";
+      }
+      if (s.warn) { text = "50+ entries waiting. Please check the network. " + text; cls = "alarm"; }
+    }
+    p.textContent = text;
+    p.className = cls;
+
+    $("storageWarn").style.display = s.storageOk ? "none" : "block";
+
+    // entries that were NOT counted: stay on screen until the scorer confirms
+    const rej = q.rejected();
+    $("rejBox").style.display = rej.length ? "block" : "none";
+    const box = $("rejText");
+    box.textContent = rej.length === 1
+      ? "1 entry was REJECTED by the server. It was NOT counted:"
+      : rej.length + " entries were NOT counted:";
+    for (const x of rej) {
+      const line = document.createElement("div");
+      line.textContent = "- " + entryText(x) + " (" + x.error + ")";
+      box.appendChild(line);
+    }
+
+    // the first entry keeps failing on the server
+    const h = q.head(session.username);
+    $("stuckBox").style.display = s.stuck && h ? "block" : "none";
+    if (s.stuck && h) $("stuckText").textContent = "One entry cannot be sent: " + entryText(h) + ". Tell the admin.";
+
+    // entries of another scorer on this phone
+    const others = Object.entries(s.others);
+    $("othersBox").style.display = others.length ? "block" : "none";
+    if (others.length) {
+      $("othersText").textContent = others.map(([u, c]) => "There are " + c + " unsent entries from " + u + " on this phone.").join(" ")
+        + " They will be sent when that scorer logs in again.";
+    }
   }
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
@@ -424,7 +558,7 @@
     if (socket) socket.disconnect();
     socket = io({ auth: { token: session.token } });
 
-    socket.on("connect", () => { join(); render(); flush(); });
+    socket.on("connect", () => { join(); nextTryAt = 0; render(); flush(true); });   // back online: send at once
     socket.on("disconnect", render);
     socket.on("connect_error", (err) => {
       if (err.message === "invalid token") {            // expired or fake token
@@ -443,6 +577,8 @@
     refreshMatches();
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(refreshMatches, 30000);
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(render, 1000);          // keeps "Oldest: 45 s" up to date
   }
 
   sel.onchange = () => {

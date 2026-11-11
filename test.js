@@ -903,5 +903,8 @@ const { createQueue } = require("./public/queue");
   clock += 1; await check();
   assert.strictEqual(calls, 2, "checked again after 2 s");
 
+  // ---------- the scorer page itself (public/scorer.html + public/queue.js), with a fake page and socket ----------
+  await require("./test-scorer-page")();
+
   console.log("All tests passed");
 })().catch((e) => { console.error(e); process.exit(1); });
