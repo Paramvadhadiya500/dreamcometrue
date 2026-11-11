@@ -12,7 +12,7 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 ## 2026-11-11 - CI runs the integration test (step 3a, part B)
 - **What:** `.github/workflows/test.yml` has a second job `integration`: GitHub starts its own Postgres 16 and Redis 7 for the run, then `npm ci` and `node test-integration.js` on Node 22.23. The `unit` job is unchanged. Test password only; no secrets in the workflow.
 - **Why:** so every push proves the scoring write path still works on the server's Node version, not only when someone remembers to run it on the laptop.
-- **Checked:** `actionlint` 1.7.7 (Docker): no problems. Same test on Node 22.23 in Docker on the laptop: All integration tests passed, `node test.js`: All tests passed. NOT checked yet: a real GitHub run (needs a push).
+- **Checked:** `actionlint` 1.7.7 (Docker): no problems. Same test on Node 22.23 in Docker on the laptop: All integration tests passed, `node test.js`: All tests passed. First GitHub run (commit `bbe8735`, pushed 2026-11-12): both jobs `unit` and `integration` green.
 - **Undo:** delete the `integration:` job from the file and push.
 
 ## 2026-11-11 - Integration test of the scoring write path (step 3a, part A; laptop only, not in CI yet)
