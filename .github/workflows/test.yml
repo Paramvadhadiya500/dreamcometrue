@@ -31,6 +31,19 @@ jobs:
       - name: Shell scripts have no syntax errors
         run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
 
+  # The production image builds, and the app inside it does NOT run as root (Dockerfile: USER node).
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the production image
+        run: docker build -t livescore-ci .
+
+      - name: App in the image runs as a normal user, not root
+        run: scripts/check-image-user.sh livescore-ci
+
   # The real server.js against a throwaway Postgres and Redis (test-integration.js).
   # Same images as docker-compose.yml. The password is a test value for this run only, not a secret.
   integration:

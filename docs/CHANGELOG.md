@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - The app no longer runs as root inside Docker
+- **What:** `Dockerfile`: `USER node` before `CMD`, so the app runs as the image's normal user `node` (uid 1000). Files still belong to root: the app can read them but not change them. New `scripts/check-image-user.sh` (fails if the image runs as root, cannot read its files, or can change `server.js`). New CI job `image`: builds the production image and runs that check.
+- **Why:** if a bug ever let an attacker run code in the app, as root they could rewrite the app (for example to record passwords at login). As `node` they cannot.
+- **Checked:** laptop: old image -> `root (uid 0)`, check FAILED; new image -> `node (uid 1000)`, reads its files, cannot change `server.js`, check OK. Full test copy from the new image (separate compose project, port 3100): `whoami` = node; `ls migrations`, `migrate.js`, `add-user.js`, `add-match.js`, `check-passwords.js` all worked; `/ready` 200 inside and outside; scorer login + 2 scores ok; `/api/home` 200; no permission errors in the app log. `node test.js`: All tests passed. `actionlint`: no problems. Not checked yet: the GitHub run (needs a push) and the server.
+- **Deploy (Ubuntu bash, normal order, no match live):** backup, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (nothing new), `docker compose up -d` (only the app restarts), then `docker compose exec -T app whoami` must print `node` and `/ready` must be ok.
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d`.
+
 ## 2026-11-12 - Roadmap brought up to date (docs only)
 - **What:** `docs/ROADMAP.md`: new "Done" table (HTTPS, no demo passwords, trusted hourly backups, S3 copy + heartbeat, uptime alerts, CI, scorer queue). "Now" is down to: real domain name (the IP address only gets a 6-day certificate), mock event, 2,000-student load test. The rehearsal list now points to `git show 84620c3^:LESSON_12.md` (that file was deleted). Volleyball is listed as an engine. The staging row no longer says tests are run by hand.
 - **Why:** it still listed finished work as open (HTTP passwords, off-server backups, monitoring, CI) and pointed to a deleted file.
