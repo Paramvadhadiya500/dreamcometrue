@@ -11,7 +11,7 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ## 2026-11-12 - Deployed the score history on the server (by hand)
 - **What:** normal deploy of `7603c08` (steps 1-3 of the score history; backup, `git pull`, `build`, `migrate.js`, `up -d`; only the app restarted, db and redis stayed healthy).
-- **Checked:** GitHub run for `7603c08`: all 3 jobs green. Server: `/ready` -> `{"ok":true,"failed":[]}`; `security-check.sh` 27 passed, 0 warnings, 0 failed; the user opened History on the live admin page and reported it right. Phone-width view: not reported.
+- **Checked:** GitHub run for `7603c08`: all 3 jobs green. Server: `/ready` -> `{"ok":true,"failed":[]}`; `security-check.sh` 27 passed, 0 warnings, 0 failed; the user opened History on the live admin page and reported it right, on the laptop and on a phone.
 - **Undo:** `git revert 7603c08 9faf4be f2d3611`, `docker compose build`, `docker compose up -d`.
 
 ## 2026-11-12 - Admin page: History button per match (history step 3)
