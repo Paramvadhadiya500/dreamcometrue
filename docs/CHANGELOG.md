@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - `node_modules` is no longer stored in Git
+- **What:** `git rm -r --cached node_modules`: Git stops tracking the 4124 package files (about 18 MB) that were committed by accident in `a231348` (2026-10-11), before `.gitignore` listed `node_modules`. The files on the laptop are untouched; `.gitignore` keeps the folder out from now on. Old copies stay in Git history (removing them would need a history rewrite and a force push: not done).
+- **Why:** `package-lock.json` already fixes every version and `npm ci` recreates the folder; the tracked copy made every package change a diff of thousands of files (the `dotenv` removal deleted ~1250 lines in it), held Windows-only files and old package code in a public Linux repo, and could be used by mistake instead of a clean install. The website never used it: the Docker image excludes it (`.dockerignore`) and installs its own copy with `npm ci`, and no server script runs `node` outside Docker.
+- **Server note:** the next `git pull` on the server deletes the `node_modules` folder from `~/dreamcometrue`. That is expected and harmless (the app runs from its image).
+- **Checked:** Git tracks 0 files under `node_modules`; the laptop still has all 4124; `git status` does not show the folder (ignored); `node test.js`: All tests passed. A fresh clone of this commit (no `node_modules` at all): production image builds, `check-image-user.sh` OK, server starts, `/ready` ok.
+- **Undo:** `git revert <this commit>` (puts the files back under Git; nothing to do on the server).
+
 ## 2026-11-12 - Removed the unused `dotenv` package
 - **What:** `npm uninstall dotenv`: removed from `package.json` and `package-lock.json` (npm also wrote the existing `engines: 22.x` into the lock file). The `dotenv` files under `node_modules/` that were tracked in Git are deleted too. `docs/CODEMAP.md`: the "UNSURE whether something else loads .env" note now says `npm start` loads it with Node's own `--env-file` and `dotenv` was removed.
 - **Why:** no file used it (`npm start` already uses `node --env-file=.env`); unused code in the image and one more package to get security warnings about.
