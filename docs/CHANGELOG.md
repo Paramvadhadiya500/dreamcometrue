@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Match page loads the minified Socket.IO client
+- **What:** `public/match.html` line 48: `/socket.io/socket.io.js` -> `/socket.io/socket.io.min.js` (1 line). Phase 1, step 2 of the student-pages plan. The Socket.IO server already serves both files (same version, from `node_modules/socket.io/client-dist`); no package or server change.
+- **Why:** it was the biggest file on the match page. On disk 153,519 bytes (readable copy) vs 47,295 bytes (minified); sent gzipped. Every student downloads it on the first visit, often on slow mobile data.
+- **Checked:** laptop dev server, Chrome DevTools, "Slow 4G", cache disabled. Before: `socket.io.js` 200, 37.8 kB transferred, 798 ms. After: `socket.io.min.js` 200, 15.1 kB, 681 ms. The page showed the score; a point added on the scorer page appeared on the match page without a reload; the connection still upgrades to WebSocket (101). `node test.js`: All tests passed. Note: a typo in the name (`/socket.io/socket.min.js`) answers 400, not 404 (Socket.IO treats unknown `/socket.io/` paths as a broken connection attempt) and the page then has no live score. NOT checked: on a phone and on the real server.
+- **Undo:** `git revert <this commit>`, then the normal deploy (`docker compose build`, `docker compose up -d`).
+
 ## 2026-11-12 - Home page polls can now get "304 Not Modified"
 - **What:** `public/index.html`: the `/api/home` and `/api/standings` requests use `cache: "no-cache"` instead of `cache: "no-store"` (2 lines). Phase 1, step 1 of the student-pages plan.
 - **Why:** `no-store` made the browser skip its cache completely, so it never sent `If-None-Match` and the server's ETag + ready-made answer (`sendPacket` in `server.js`) never answered 304 to the real page: every poll (every 10 s, every student) downloaded the full JSON again. `no-cache` means "keep a copy, but always ask the server first". The page code still gets status 200 with the full body (the browser fills it in from its copy), so nothing else in the page changes. The match page's `/api/match/:id` fetch already got 304s (it never had `no-store`).
