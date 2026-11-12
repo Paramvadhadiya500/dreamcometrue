@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Removed the unused `dotenv` package
+- **What:** `npm uninstall dotenv`: removed from `package.json` and `package-lock.json` (npm also wrote the existing `engines: 22.x` into the lock file). The `dotenv` files under `node_modules/` that were tracked in Git are deleted too. `docs/CODEMAP.md`: the "UNSURE whether something else loads .env" note now says `npm start` loads it with Node's own `--env-file` and `dotenv` was removed.
+- **Why:** no file used it (`npm start` already uses `node --env-file=.env`); unused code in the image and one more package to get security warnings about.
+- **Checked:** search of all code, scripts and docs: no `require("dotenv")`, no `-r dotenv`; `npm ls dotenv`: only our own package needed it. Node 22.23 in Docker: clean `npm ci` from the new lock, `dotenv` not installed, `node test.js` and `test-integration.js` all passed. Production image: builds, `check-image-user.sh` OK, `dotenv` not in it, server starts and `/ready` -> ok. Laptop `node test.js`: All tests passed. Not checked: `npm start` itself (unchanged; it never used `dotenv`).
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d`.
+
 ## 2026-11-12 - Deployed the score history on the server (by hand)
 - **What:** normal deploy of `7603c08` (steps 1-3 of the score history; backup, `git pull`, `build`, `migrate.js`, `up -d`; only the app restarted, db and redis stayed healthy).
 - **Checked:** GitHub run for `7603c08`: all 3 jobs green. Server: `/ready` -> `{"ok":true,"failed":[]}`; `security-check.sh` 27 passed, 0 warnings, 0 failed; the user opened History on the live admin page and reported it right, on the laptop and on a phone.

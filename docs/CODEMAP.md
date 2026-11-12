@@ -106,7 +106,7 @@ node --env-file=.env server.js    # same as: npm start (package.json:8). Listens
 node add-user.js <name> <admin|scorer> <password-10+-chars>
 node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis
 ```
-`.env` needs `DATABASE_URL` and `REDIS_URL` (names seen locally; values not read). `JWT_SECRET` is optional locally and falls back to `"dev-only-change-me"` (`server.js:16`). Plain `node server.js` does NOT load `.env` (`server.js` has no `dotenv` call; `UNSURE:` whether something else loads it), so use `npm start`.
+`.env` needs `DATABASE_URL` and `REDIS_URL` (names seen locally; values not read). `JWT_SECRET` is optional locally and falls back to `"dev-only-change-me"` (`server.js:16`). Plain `node server.js` does NOT load `.env`; `npm start` does, with Node's own `--env-file=.env` (`package.json`). The `dotenv` package is not used and was removed (2026-11-12).
 
 Server (Ubuntu, `~/dreamcometrue`): see `DEPLOY.md` and `PROJECT_CONTEXT.md:122-133`. Never `docker compose down -v`.
 
