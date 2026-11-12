@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Security update: `body-parser` 2.4.0, `qs` 6.17.1 (`npm audit fix`)
+- **What:** `package-lock.json` only: `body-parser` 2.3.0 -> 2.4.0 and `qs` 6.16.0 -> 6.17.1 (both used by express 5.2.1, inside its allowed ranges). No code change. `npm audit`: 0 vulnerabilities (was 1 high, 1 moderate).
+- **Why:** `body-parser` < 2.4.0 (GHSA-27r3-jxmh-p828, high): after reading a compressed request body it left the decompression stream attached with no error handler; the advisory says one request with junk bytes after the compressed data can crash the process, before login or routing (we use it through `express.json()` for `/login` and the admin API). `qs` <= 6.16.0 (GHSA-6pq8-jhm2-2vcw, moderate): `qs.stringify` with `arrayFormat: 'comma'` can throw; our code never calls it, so low risk, but fixed with the same update.
+- **Honest note:** I could not make the crash happen here. 8 kinds of bad compressed bodies (gzip, deflate, brotli; all at once or split) on Node 22.23 and Node 26 with 2.3.0: the server answered 200 or 400 and stayed up. I read the 2.3.0 -> 2.4.0 code change: 2.4.0 now detaches, silences and destroys that stream after reading. Updating anyway because it is the maintainers' patch and a minor version step. A test that passed before the update was dropped, because it proved nothing.
+- **Checked:** laptop and Node 22.23 (clean `npm ci` from the new lock): `node test.js` and `test-integration.js` all passed. Production image: `check-image-user.sh` OK; server started; `/ready` 200; `/login` normal 200, broken JSON 400 "bad request", gzip-compressed login 200; no crash lines in the log.
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d`.
+
 ## 2026-11-12 - Deployed the `dotenv` removal on the server (by hand)
 - **What:** normal deploy of `a2ac227` (only the app restarted).
 - **Checked:** GitHub run for `a2ac227`: all 3 jobs green. Server: `git log` shows `a2ac227`; inside the app `require('dotenv')` fails ("dotenv gone"); `/ready` ok; `security-check.sh` 27 passed, 0 warnings, 0 failed.
