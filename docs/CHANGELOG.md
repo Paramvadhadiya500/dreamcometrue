@@ -9,6 +9,11 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Deployed the `dotenv` removal on the server (by hand)
+- **What:** normal deploy of `a2ac227` (only the app restarted).
+- **Checked:** GitHub run for `a2ac227`: all 3 jobs green. Server: `git log` shows `a2ac227`; inside the app `require('dotenv')` fails ("dotenv gone"); `/ready` ok; `security-check.sh` 27 passed, 0 warnings, 0 failed.
+- **Undo:** see the `dotenv` entry below.
+
 ## 2026-11-12 - `node_modules` is no longer stored in Git
 - **What:** `git rm -r --cached node_modules`: Git stops tracking the 4124 package files (about 18 MB) that were committed by accident in `a231348` (2026-10-11), before `.gitignore` listed `node_modules`. The files on the laptop are untouched; `.gitignore` keeps the folder out from now on. Old copies stay in Git history (removing them would need a history rewrite and a force push: not done).
 - **Why:** `package-lock.json` already fixes every version and `npm ci` recreates the folder; the tracked copy made every package change a diff of thousands of files (the `dotenv` removal deleted ~1250 lines in it), held Windows-only files and old package code in a public Linux repo, and could be used by mistake instead of a clean install. The website never used it: the Docker image excludes it (`.dockerignore`) and installs its own copy with `npm ci`, and no server script runs `node` outside Docker.
