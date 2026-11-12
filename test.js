@@ -873,6 +873,81 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(q.status("rahul").storageOk, true);
 }
 
+// ---------- score history for the admin page (audit.js) ----------
+{
+  const { buildHistory } = require("./audit");
+  const at = (n) => new Date(Date.UTC(2026, 10, 12, 10, 0, n));     // event n saved at 10:00:n UTC
+  // rows as Postgres gives them: seq as a string (BIGSERIAL), value may be null, data parsed JSON
+  const evs = (list) => list.map((e, i) => ({ seq: String(i + 1), type: e.type, team: e.team || null,
+    value: e.value === undefined ? null : e.value, data: e.data || null, by_user: e.by || "rahul", created_at: at(i + 1) }));
+  const hist = (sport, list, extra = {}) => {
+    const match = { id: "m1", name: "M", sport, best_of: 3, config: {}, team_a: "CSE", team_b: "ECE", ...extra };
+    return buildHistory(match, evs(list), getEngine(sport));
+  };
+  const bySeq = (h) => Object.fromEntries(h.rows.map((r) => [r.seq, r]));
+
+  // simple sport: points, undo cancels the newest still-counted action, double undo, undo of a finish
+  const h1 = hist("simple", [
+    { type: "point", team: "A", value: 2 },            // 1
+    { type: "point", team: "B", by: "neha" },          // 2 (value null = 1)
+    { type: "undo" },                                  // 3 cancels 2
+    { type: "point", team: "A", value: 1 },            // 4
+    { type: "finish" },                                // 5
+    { type: "undo" },                                  // 6 cancels 5 (the finish)
+    { type: "undo" },                                  // 7 cancels 4
+  ]);
+  assert.strictEqual(h1.total, 7);
+  assert.deepStrictEqual(h1.rows.map((r) => r.seq), [7, 6, 5, 4, 3, 2, 1], "newest first, seq as numbers");
+  const s1 = bySeq(h1);
+  assert.deepStrictEqual([s1[1].text, s1[1].after, s1[1].by, s1[1].at], ["+2 for CSE", "CSE 2 - 0 ECE", "rahul", "2026-11-12T10:00:01.000Z"]);
+  assert.deepStrictEqual([s1[2].text, s1[2].after, s1[2].by], ["+1 for ECE", "CSE 2 - 1 ECE", "neha"]);
+  assert.deepStrictEqual([s1[2].undone, s1[2].undoneBySeq], [true, 3]);
+  assert.deepStrictEqual([s1[3].text, s1[3].undoesSeq, s1[3].after], ["UNDO (cancels: +1 for ECE)", 2, "CSE 2 - 0 ECE"]);
+  assert.deepStrictEqual([s1[5].text, s1[5].undone, s1[5].undoneBySeq], ["Finish match", true, 6]);
+  assert.deepStrictEqual([s1[6].text, s1[6].undoesSeq], ["UNDO (cancels: Finish match)", 5]);
+  assert.deepStrictEqual([s1[7].undoesSeq, s1[4].undone, s1[4].undoneBySeq, s1[7].after], [4, true, 7, "CSE 2 - 0 ECE"]);
+  assert.deepStrictEqual([s1[1].undone, s1[1].undoneBySeq, s1[1].undoesSeq], [false, null, null], "a counted action");
+
+  // no team names: "Team A" / "Team B", like the student page
+  assert.strictEqual(hist("simple", [{ type: "point", team: "B", value: 3 }], { team_a: "", team_b: " " }).rows[0].after, "Team A 0 - 3 Team B");
+  assert.strictEqual(hist("simple", [{ type: "point", team: "B", value: 3 }], { team_a: "", team_b: "" }).rows[0].text, "+3 for Team B");
+
+  // an undo with nothing to cancel (the server refuses it, but old data must not break the page)
+  const h2 = bySeq(hist("simple", [{ type: "undo" }]));
+  assert.deepStrictEqual([h2[1].text, h2[1].undoesSeq], ["UNDO (nothing to cancel)", null]);
+
+  // an unknown type is shown as it is, and does not break the list
+  assert.strictEqual(hist("simple", [{ type: "something_new" }]).rows[0].text, "something_new");
+
+  // cricket: every kind of ball in words, the score after each one, and undo of a wicket
+  const b = (runs, extra = null, kind = null) => ({ type: "ball", data: { runs, extra, wicket: kind ? { kind } : null } });
+  const h3 = bySeq(hist("cricket", [
+    b(0), b(4), b(1, "wide"), b(2, "noball"), b(1, "legbye"), b(0, null, "caught"), { type: "undo" },
+    b(2, "bye"), b(1), { type: "end_innings" },
+  ], { config: { overs: 2, players: 4, firstBatting: "A", freeHit: true } }));
+  assert.deepStrictEqual([h3[1].text, h3[1].after], ["Dot ball", "CSE 0/0 (0.1 ov)"]);
+  assert.deepStrictEqual([h3[2].text, h3[2].after], ["4 runs", "CSE 4/0 (0.2 ov)"]);
+  assert.deepStrictEqual([h3[3].text, h3[3].after], ["Wide + 1", "CSE 6/0 (0.2 ov)"]);
+  assert.deepStrictEqual([h3[4].text, h3[4].after], ["No ball + 2 off the bat", "CSE 9/0 (0.2 ov)"]);
+  assert.deepStrictEqual([h3[5].text, h3[5].after], ["1 leg bye", "CSE 10/0 (0.3 ov)"]);
+  assert.deepStrictEqual([h3[6].text, h3[6].after, h3[6].undone], ["Dot ball + WICKET (Caught)", "CSE 10/1 (0.4 ov)", true]);
+  assert.deepStrictEqual([h3[7].text, h3[7].after], ["UNDO (cancels: Dot ball + WICKET (Caught))", "CSE 10/0 (0.3 ov)"]);
+  assert.deepStrictEqual([h3[8].text, h3[9].text, h3[10].text], ["2 byes", "1 run", "End innings"]);
+
+  // volleyball: finish with a winner (walkover)
+  const h4 = hist("volleyball", [{ type: "finish", data: { winner: "B" } }], { config: { bestOf: 3 } });
+  assert.deepStrictEqual([h4.rows[0].text, h4.rows[0].after], ["Finish match (ECE wins)", "ECE won (walkover), sets 0-0"]);
+
+  // table tennis: a point has no value
+  const h5 = hist("table_tennis", [{ type: "point", team: "A" }]);
+  assert.deepStrictEqual([h5.rows[0].text, h5.rows[0].after], ["+1 for CSE", "CSE 0-0 ECE (1-0 in this game)"]);
+
+  // an engine that throws must not break the history: the row just has no score
+  const broken = { compute() { throw new Error("boom"); }, headline() { return "x"; } };
+  const h6 = buildHistory({ sport: "simple", team_a: "", team_b: "" }, evs([{ type: "point", team: "A" }]), broken);
+  assert.deepStrictEqual([h6.rows[0].text, h6.rows[0].after], ["+1 for Team A", null]);
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------

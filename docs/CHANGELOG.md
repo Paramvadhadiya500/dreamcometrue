@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Score history logic as its own tested file (history step 1; not used yet)
+- **What:** new `audit.js` (`buildHistory`): turns the stored scoring actions of one match into a list for the admin page, newest first: when the server saved it, who (login), the action in words ("+2 for CSE", "4 runs", "Wide + 1", "Dot ball + WICKET (Caught)", "Finish match (ECE wins)", "UNDO (cancels: +1 for ECE)"), whether it was undone and by which undo, and the score right after it (each sport's own one-line score). Undo pairing is the same rule the score uses (`effectivePoints`). A broken old row shows without a score instead of breaking the list. Tests in `test.js`.
+- **Why:** on event day a team may dispute a score; today the only way to look is SQL on the server.
+- **Checked:** `node test.js`: All tests passed (simple, cricket, volleyball, table tennis, double undo, undo of a finish, empty team names, unknown type, broken engine). 3 deliberate breaks (undo cancels the oldest, score ignores undo, point value always 1) each made the tests fail; restored.
+- **Undo:** `git revert <this commit>` (nothing uses the file yet).
+
 ## 2026-11-12 - Deployed "app runs as node" on the server (by hand)
 - **What:** normal deploy of `c83395b` (backup, `git pull`, `build`, `migrate.js`, `up -d`; only the app restarted).
 - **Checked:** GitHub run for `c83395b`: all 3 jobs green (`unit`, `integration`, `image`). Server, as reported by the user: `docker compose exec -T app whoami` -> `node`; `/ready` ok; `security-check.sh` 0 failed.
