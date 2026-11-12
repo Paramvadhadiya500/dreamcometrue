@@ -32,6 +32,11 @@
   .checks input { width: auto; }
   .actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
   #loginBox { max-width: 340px; margin: 40px auto; }
+  .hrow { border-top: 1px solid #e3e6ea; padding: 8px 0; }
+  .hrow .what { font-size: 16px; font-weight: bold; margin: 2px 0; }
+  .hrow.undone .what { text-decoration: line-through; color: #888; font-weight: normal; }
+  .hrow.undo .what { color: #a40; }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #fde8d8; color: #a40; margin-left: 6px; text-decoration: none; }
 </style>
 </head>
 <body>
@@ -128,6 +133,18 @@
         </div>
       </div>
 
+      <div id="historyBox" class="box" style="display:none">
+        <h3 id="historyTitle" style="margin-top:0">History</h3>
+        <div id="historySummary" class="small"></div>
+        <div class="small">Newest first. Time = when the server received the action (an entry sent late from a phone shows the later time).</div>
+        <div class="actions">
+          <button id="historyRefresh" onclick="loadHistory()">Refresh</button>
+          <button onclick="closeHistory()">Close</button>
+        </div>
+        <div id="historyErr" class="err"></div>
+        <div id="historyList"></div>
+      </div>
+
       <div id="matchList"></div>
     </section>
 
@@ -201,6 +218,7 @@
   function logout(message) {
     localStorage.removeItem(SKEY);
     session = null;
+    closeHistory();
     $("app").style.display = "none";
     $("loginBox").style.display = "block";
     $("loginErr").textContent = typeof message === "string" ? message : "";
@@ -275,6 +293,11 @@
       const del = el("button", "Delete", "danger");
       del.onclick = () => deleteMatch(m);
       actions.appendChild(edit);
+      if (m.events > 0) {
+        const hist = el("button", "History");
+        hist.onclick = () => openHistory(m);
+        actions.appendChild(hist);
+      }
       actions.appendChild(del);
       row.appendChild(actions);
       box.appendChild(row);
@@ -418,9 +441,83 @@
     try {
       await api("DELETE", "/matches/" + encodeURIComponent(m.id), body);
       if (editingId === m.id) closeForm();
+      if (historyMatch && historyMatch.id === m.id) closeHistory();
       await load();
     } catch (e) {
       $("pageErr").textContent = e.message;
+    }
+  }
+
+  // ---------- score history of one match (read-only) ----------
+  let historyMatch = null;
+  const histFmt = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" };
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  function openHistory(m) {
+    historyMatch = { id: m.id, name: m.name };
+    $("historyTitle").textContent = "History: " + m.name;
+    $("historySummary").textContent = "Loading...";
+    $("historyList").textContent = "";
+    $("historyErr").textContent = "";
+    $("historyBox").style.display = "block";
+    $("historyBox").scrollIntoView && $("historyBox").scrollIntoView({ block: "start" });
+    loadHistory();
+  }
+
+  function closeHistory() {
+    $("historyBox").style.display = "none";
+    $("historyList").textContent = "";
+    historyMatch = null;
+  }
+
+  async function loadHistory() {
+    if (!historyMatch) return;
+    const asked = historyMatch.id;
+    $("historyErr").textContent = "";
+    $("historyRefresh").disabled = true;
+    try {
+      const h = await api("GET", "/matches/" + encodeURIComponent(asked) + "/history");
+      if (!historyMatch || historyMatch.id !== asked) return;       // closed or another match opened meanwhile
+      renderHistory(h);
+      load();                                                        // keep the "N scoring actions" counts on the cards in step
+    } catch (e) {
+      $("historyErr").textContent = "Could not load the history: " + e.message;
+    } finally {
+      $("historyRefresh").disabled = false;
+    }
+  }
+
+  function renderHistory(h) {
+    const perScorer = {};
+    let undone = 0;
+    for (const r of h.rows) {
+      perScorer[r.by] = (perScorer[r.by] || 0) + 1;
+      if (r.undone) undone++;
+    }
+    const who = Object.entries(perScorer).sort((a, b) => b[1] - a[1]).map(([u, n]) => u + " " + n).join(", ");
+    let summary = h.total + (h.total === 1 ? " action" : " actions");
+    if (who) summary += " · " + who;
+    summary += " · " + undone + " undone";
+    if (h.truncated) summary += " · showing only the first " + h.rows.length;
+    $("historySummary").textContent = summary;
+
+    const bySeq = {};
+    for (const r of h.rows) bySeq[r.seq] = r;
+    const box = $("historyList");
+    box.textContent = "";
+    if (h.rows.length === 0) box.appendChild(el("p", "No scoring actions yet.", "small"));
+    for (const r of h.rows) {
+      const row = el("div", undefined, "hrow" + (r.undone ? " undone" : "") + (r.type === "undo" ? " undo" : ""));
+      row.appendChild(el("div", new Date(r.at).toLocaleString([], histFmt) + " · " + r.by, "small"));
+      const what = el("div", r.text, "what");
+      if (r.undone) {
+        const by = bySeq[r.undoneBySeq];
+        what.appendChild(el("span", "undone" + (by ? " at " + clock(by.at) : ""), "tag"));
+      }
+      if (r.type === "undo" && bySeq[r.undoesSeq]) what.appendChild(el("span", "action from " + clock(bySeq[r.undoesSeq].at), "tag"));
+      row.appendChild(what);
+      if (r.after) row.appendChild(el("div", "Score after: " + r.after, "small"));
+      box.appendChild(row);
     }
   }
 

@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Admin page: History button per match (history step 3)
+- **What:** `public/admin.html`: a **History** button on every match that has scoring actions. It opens a box above the match list: a summary ("7 actions · rahul 6, neha 1 · 1 undone"), then every action newest first: date and time (when the server received it) and who; the action in words (an undone action is struck through with "undone at <time>", an undo says what it cancelled and "action from <time>"); "Score after: ...". Refresh (also updates the counts on the match cards) and Close. Closes itself on log out and when its match is deleted. Text only (`textContent`), no new `innerHTML`.
+- **Why:** an admin can answer "what happened in this match, and who pressed it?" on event day without SQL on the server.
+- **Checked:** laptop test copy (separate compose project, port 3100) in Chrome with a cricket match (2 scorers, wicket then undo, wide, no ball) and a kabaddi match (undo): every row, undo mark and score after was correct; Refresh showed a newly scored action and the card count followed; Close; no console errors; no errors in the app log. Page script syntax check OK. `node test.js` and `npm run test:integration`: all passed. NOT checked: phone-width view (the browser tool could not resize the window) - look once on a phone after deploy.
+- **Limits:** only scoring actions (admin edits, deletes and password resets are not recorded); a deleted match loses its history; the time is when the server received the action, not when the phone was tapped; "who" is the login, so a shared account cannot tell people apart.
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d`.
+
 ## 2026-11-12 - Admin API: score history of one match (history step 2; no page button yet)
 - **What:** `admin.js`: new read-only `GET /api/admin/matches/:id/history` (admins only, like every `/api/admin` route). Answers `{ match, total, truncated, rows }` built by `audit.js`, newest first; at most the first 3000 actions (`truncated: true` beyond that); `Cache-Control: no-store`. Two plain SELECTs, nothing is written. New case 7 in `test-integration.js`.
 - **Why:** step 2 of the score history (the page uses it in step 3).
