@@ -353,6 +353,53 @@ test("7. admin score history: who did what, undo marked, score after; admins onl
   assert.strictEqual(hb.body.rows[0].after, "Team A 3000 - 0 Team B");
 });
 
+test("8. the save itself fails (inner safety net in applyAction): retry:true, nothing saved, match not left locked", async () => {
+  const match = await addMatch("inner", ["it_scorer1"]);
+  const s1 = await scorer("it_scorer1");
+  assert.strictEqual((await act(s1, match, point("A", 1))).ok, true);
+
+  // A database rule in the TEST database only: refuse to save this one action. Login, permission check and reading
+  // the match all still work, so the error happens in the middle of applyAction (the INSERT), not before it.
+  const poison = point("A", 5);
+  await pool.query(`CREATE OR REPLACE FUNCTION it_refuse_one_event() RETURNS trigger AS $$
+    BEGIN IF NEW.id = '${poison.id}' THEN RAISE EXCEPTION 'test: this event is refused on purpose'; END IF; RETURN NEW; END
+    $$ LANGUAGE plpgsql`);
+  await pool.query("DROP TRIGGER IF EXISTS it_refuse_one_event ON events");
+  await pool.query("CREATE TRIGGER it_refuse_one_event BEFORE INSERT ON events FOR EACH ROW EXECUTE FUNCTION it_refuse_one_event()");
+  try {
+    const logBefore = serverLog.length;
+    const first = await act(s1, match, poison);
+    assert.deepStrictEqual(first, { ok: false, error: "server error", retry: true });
+    assert.ok(serverLog.slice(logBefore).some((l) => l.startsWith("applyAction failed:")),
+      "the inner safety net (server.js applyAction catch) must be the one that answered");
+    // ROLLBACK ended the failed transaction: no connection of the server is left inside it (holding the match lock)
+    const stuck = await pool.query(
+      "SELECT state FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid() AND state LIKE 'idle in transaction%'");
+    assert.deepStrictEqual(stuck.rows, [], "a server connection was left inside the failed transaction");
+
+    // a phone retries with the same id: same answer every time (a "stuck" entry), still nothing saved
+    assert.deepStrictEqual(await act(s1, match, poison), { ok: false, error: "server error", retry: true });
+    assert.strictEqual(await rowsWithId(poison.id), 0);
+
+    // ROLLBACK released the match lock and left every DB connection clean: other actions on this match still work
+    for (let i = 0; i < 12; i++) {
+      const ok = await act(s1, match, point("B", 1));
+      assert.strictEqual(ok.ok, true, "action " + i + " after the failed save: " + JSON.stringify(ok));
+    }
+  } finally {
+    await pool.query("DROP TRIGGER IF EXISTS it_refuse_one_event ON events");
+    await pool.query("DROP FUNCTION IF EXISTS it_refuse_one_event()");
+  }
+
+  // the rule is gone: the SAME id now saves normally
+  const later = await act(s1, match, poison);
+  assert.strictEqual(later.ok, true, JSON.stringify(later));
+  assert.strictEqual(later.duplicate, undefined);
+  assert.deepStrictEqual([later.state.scoreA, later.state.scoreB], [6, 12]);
+  assert.strictEqual(await rowsWithId(poison.id), 1);
+  assert.strictEqual(server.exitCode, null);
+});
+
 // ---------- run ----------
 async function main() {
   const watchdog = setTimeout(() => { console.error("FAIL: integration tests took over 3 minutes"); finish(1); }, 180000);

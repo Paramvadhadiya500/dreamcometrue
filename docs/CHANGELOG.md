@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Test for the inner safety net of `applyAction`
+- **What:** new case 8 in `test-integration.js`. In the TEST database only, a temporary trigger refuses to save one action, so the error happens in the middle of `applyAction` (the INSERT), after login, permission check and match read. Checks: the phone gets `{ok:false, error:"server error", retry:true}`; the server log says `applyAction failed:` (the inner net answered, not the outer one); a retry with the same id gets the same answer and nothing is saved (a "stuck" entry); Postgres shows no server connection left inside the failed transaction; 12 more actions on the same match work; after the trigger is removed, the same id saves normally. The trigger is always removed (`finally`). No server code changed.
+- **Why:** the outage test (case 6) fails earlier, in the permission check, so this branch (`server.js` applyAction `catch`: ROLLBACK + `retry:true`) had never run in a test.
+- **Checked:** 3 clean runs in a row passed; Node 22.23: passed; `node test.js`: All tests passed. 3 deliberate breaks of `server.js`, each failed case 8: answer without `retry`; no inner net (error goes to the outer one); `ROLLBACK` removed. The last one was first NOT caught (a retry happened to reuse the broken connection and the pool threw it away, so later actions worked by luck); the direct Postgres check was added and then caught it. `server.js` restored with `git checkout` each time.
+- **Undo:** `git revert <this commit>` (test file only; nothing to deploy).
+
 ## 2026-11-12 - Deployed the security update on the server (by hand)
 - **What:** normal deploy of `fa473f9` (only the app restarted). This `git pull` also removed the no-longer-tracked `node_modules` folder from `~/dreamcometrue` (expected; the app uses the one inside its image).
 - **Checked:** GitHub run for `fa473f9`: all 3 jobs green. Server: `git log` shows `fa473f9`; inside the app `body-parser 2.4.0, qs 6.17.1`; `/ready` ok; `security-check.sh` 27 passed, 0 warnings, 0 failed; the user logged in on the admin page and the scorer page.
