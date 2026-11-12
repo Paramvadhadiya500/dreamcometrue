@@ -9,6 +9,11 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Deployed the security update on the server (by hand)
+- **What:** normal deploy of `fa473f9` (only the app restarted). This `git pull` also removed the no-longer-tracked `node_modules` folder from `~/dreamcometrue` (expected; the app uses the one inside its image).
+- **Checked:** GitHub run for `fa473f9`: all 3 jobs green. Server: `git log` shows `fa473f9`; inside the app `body-parser 2.4.0, qs 6.17.1`; `/ready` ok; `security-check.sh` 27 passed, 0 warnings, 0 failed; the user logged in on the admin page and the scorer page.
+- **Undo:** see the security update entry below.
+
 ## 2026-11-12 - Security update: `body-parser` 2.4.0, `qs` 6.17.1 (`npm audit fix`)
 - **What:** `package-lock.json` only: `body-parser` 2.3.0 -> 2.4.0 and `qs` 6.16.0 -> 6.17.1 (both used by express 5.2.1, inside its allowed ranges). No code change. `npm audit`: 0 vulnerabilities (was 1 high, 1 moderate).
 - **Why:** `body-parser` < 2.4.0 (GHSA-27r3-jxmh-p828, high): after reading a compressed request body it left the decompression stream attached with no error handler; the advisory says one request with junk bytes after the compressed data can crash the process, before login or routing (we use it through `express.json()` for `/login` and the admin API). `qs` <= 6.16.0 (GHSA-6pq8-jhm2-2vcw, moderate): `qs.stringify` with `arrayFormat: 'comma'` can throw; our code never calls it, so low risk, but fixed with the same update.
