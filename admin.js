@@ -5,6 +5,9 @@ const bcrypt = require("bcryptjs");
 const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
 const volleyball = require("./engines/volleyball");
+const { buildHistory } = require("./audit");
+
+const HISTORY_LIMIT = 3000;   // actions listed per match (a real match has a few hundred)
 
 const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other" };
 const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", simple: "sm" };
@@ -297,6 +300,28 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
     }
     await afterMatchChange(id, { removed: true });
     res.json({ ok: true });
+  }));
+
+  // ----- score history of one match (read-only): who did what, when, undone or not, score after -----
+  router.get("/matches/:id/history", wrap(async (req, res) => {
+    const id = checkMatchId(req.params.id);
+    const m = await pool.query("SELECT id, name, sport, best_of, config, team_a, team_b FROM matches WHERE id = $1", [id]);
+    if (m.rowCount === 0) throw new Problem("match not found", 404);
+    const engine = getEngine(m.rows[0].sport);
+    if (!engine) throw new Problem("unknown sport", 500);
+    const count = await pool.query("SELECT count(*)::int AS n FROM events WHERE match_id = $1", [id]);
+    const ev = await pool.query(
+      "SELECT seq, type, team, value, data, by_user, created_at FROM events WHERE match_id = $1 ORDER BY seq LIMIT $2",
+      [id, HISTORY_LIMIT]
+    );
+    const h = buildHistory(m.rows[0], ev.rows, engine);
+    res.set("Cache-Control", "no-store");
+    res.json({
+      match: { id: m.rows[0].id, name: m.rows[0].name },
+      total: count.rows[0].n,
+      truncated: count.rows[0].n > ev.rows.length,
+      rows: h.rows,
+    });
   }));
 
   // ----- scorers -----

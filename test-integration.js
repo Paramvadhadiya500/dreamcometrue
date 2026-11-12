@@ -305,6 +305,54 @@ test("6. database outage: action answered retry:true, server stays up, same id s
   assert.strictEqual(server.exitCode, null);
 });
 
+async function getJson(path, token) {
+  const res = await fetch(baseUrl + path, { headers: token ? { Authorization: "Bearer " + token } : {} });
+  return { status: res.status, headers: res.headers, body: await res.json() };
+}
+
+test("7. admin score history: who did what, undo marked, score after; admins only", async () => {
+  const match = await addMatch("hist", ["it_scorer1"]);
+  const s1 = await scorer("it_scorer1");
+  const adm = await scorer("it_admin");
+  assert.strictEqual((await act(s1, match, point("A", 2))).ok, true);
+  assert.strictEqual((await act(s1, match, point("B", 1))).ok, true);
+  assert.strictEqual((await act(s1, match, { id: newId(), type: "undo" })).ok, true);
+  assert.strictEqual((await act(adm, match, point("A", 1))).ok, true);
+
+  const adminToken = (await login("it_admin")).body.token;
+  const h = await getJson("/api/admin/matches/" + match + "/history", adminToken);
+  assert.strictEqual(h.status, 200, JSON.stringify(h.body));
+  assert.strictEqual(h.headers.get("cache-control"), "no-store");
+  assert.deepStrictEqual([h.body.match.id, h.body.total, h.body.truncated], [match, 4, false]);
+  const rows = h.body.rows;
+  assert.deepStrictEqual(rows.map((r) => r.text),
+    ["+1 for Team A", "UNDO (cancels: +1 for Team B)", "+1 for Team B", "+2 for Team A"]);
+  assert.deepStrictEqual(rows.map((r) => r.by), ["it_admin", "it_scorer1", "it_scorer1", "it_scorer1"]);
+  assert.deepStrictEqual(rows.map((r) => r.undone), [false, false, true, false]);
+  assert.strictEqual(rows[1].undoesSeq, rows[2].seq);
+  assert.deepStrictEqual(rows.map((r) => r.after), ["Team A 3 - 0 Team B", "Team A 2 - 0 Team B", "Team A 2 - 1 Team B", "Team A 2 - 0 Team B"]);
+  for (const r of rows) assert.ok(Math.abs(Date.parse(r.at) - Date.now()) < 120000, "time is when the server saved it: " + r.at);
+
+  // only admins
+  const scorerToken = (await login("it_scorer1")).body.token;
+  assert.deepStrictEqual((await getJson("/api/admin/matches/" + match + "/history", scorerToken)).status, 403);
+  assert.deepStrictEqual((await getJson("/api/admin/matches/" + match + "/history")).status, 401);
+  // unknown or malformed match id
+  const unknown = await getJson("/api/admin/matches/it-no-such-match/history", adminToken);
+  assert.deepStrictEqual([unknown.status, unknown.body.error], [404, "match not found"]);
+  assert.strictEqual((await getJson("/api/admin/matches/BAD_ID!/history", adminToken)).status, 404);
+
+  // a very long match: only the first 3000 actions are listed, and the page is told
+  const big = await addMatch("big", []);
+  await pool.query(
+    `INSERT INTO events (id, match_id, type, team, value, by_user)
+     SELECT $1 || g, $2, 'point', 'A', 1, 'it_scorer1' FROM generate_series(1, 3001) g`, ["it-" + RUN + "-big-", big]);
+  const hb = await getJson("/api/admin/matches/" + big + "/history", adminToken);
+  assert.strictEqual(hb.status, 200, JSON.stringify(hb.body).slice(0, 200));
+  assert.deepStrictEqual([hb.body.total, hb.body.truncated, hb.body.rows.length], [3001, true, 3000]);
+  assert.strictEqual(hb.body.rows[0].after, "Team A 3000 - 0 Team B");
+});
+
 // ---------- run ----------
 async function main() {
   const watchdog = setTimeout(() => { console.error("FAIL: integration tests took over 3 minutes"); finish(1); }, 180000);

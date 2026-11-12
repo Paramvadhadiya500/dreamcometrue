@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Admin API: score history of one match (history step 2; no page button yet)
+- **What:** `admin.js`: new read-only `GET /api/admin/matches/:id/history` (admins only, like every `/api/admin` route). Answers `{ match, total, truncated, rows }` built by `audit.js`, newest first; at most the first 3000 actions (`truncated: true` beyond that); `Cache-Control: no-store`. Two plain SELECTs, nothing is written. New case 7 in `test-integration.js`.
+- **Why:** step 2 of the score history (the page uses it in step 3).
+- **Checked:** `npm run test:integration`: All integration tests passed (case 7: texts, who, undo marked, score after, admin 200 / scorer 403 / no login 401 / unknown and malformed id 404, a 3001-action match -> 3000 rows + `truncated`). 3 deliberate breaks (admin check removed, events read newest first, `truncated` never set) each failed case 7; restored. Speed: a 609-action cricket match builds in 16 ms. `node test.js`: All tests passed.
+- **Undo:** `git revert <this commit>`, `docker compose build`, `docker compose up -d`.
+
 ## 2026-11-12 - Score history logic as its own tested file (history step 1; not used yet)
 - **What:** new `audit.js` (`buildHistory`): turns the stored scoring actions of one match into a list for the admin page, newest first: when the server saved it, who (login), the action in words ("+2 for CSE", "4 runs", "Wide + 1", "Dot ball + WICKET (Caught)", "Finish match (ECE wins)", "UNDO (cancels: +1 for ECE)"), whether it was undone and by which undo, and the score right after it (each sport's own one-line score). Undo pairing is the same rule the score uses (`effectivePoints`). A broken old row shows without a score instead of breaking the list. Tests in `test.js`.
 - **Why:** on event day a team may dispute a score; today the only way to look is SQL on the server.
