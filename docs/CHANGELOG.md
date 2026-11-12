@@ -9,6 +9,11 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Deployed "app runs as node" on the server (by hand)
+- **What:** normal deploy of `c83395b` (backup, `git pull`, `build`, `migrate.js`, `up -d`; only the app restarted).
+- **Checked:** GitHub run for `c83395b`: all 3 jobs green (`unit`, `integration`, `image`). Server, as reported by the user: `docker compose exec -T app whoami` -> `node`; `/ready` ok; `security-check.sh` 0 failed.
+- **Undo:** see the entry below.
+
 ## 2026-11-12 - The app no longer runs as root inside Docker
 - **What:** `Dockerfile`: `USER node` before `CMD`, so the app runs as the image's normal user `node` (uid 1000). Files still belong to root: the app can read them but not change them. New `scripts/check-image-user.sh` (fails if the image runs as root, cannot read its files, or can change `server.js`). New CI job `image`: builds the production image and runs that check.
 - **Why:** if a bug ever let an attacker run code in the app, as root they could rewrite the app (for example to record passwords at login). As `node` they cannot.
