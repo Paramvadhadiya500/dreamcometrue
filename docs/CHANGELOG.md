@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-12 - Home page polls can now get "304 Not Modified"
+- **What:** `public/index.html`: the `/api/home` and `/api/standings` requests use `cache: "no-cache"` instead of `cache: "no-store"` (2 lines). Phase 1, step 1 of the student-pages plan.
+- **Why:** `no-store` made the browser skip its cache completely, so it never sent `If-None-Match` and the server's ETag + ready-made answer (`sendPacket` in `server.js`) never answered 304 to the real page: every poll (every 10 s, every student) downloaded the full JSON again. `no-cache` means "keep a copy, but always ask the server first". The page code still gets status 200 with the full body (the browser fills it in from its copy), so nothing else in the page changes. The match page's `/api/match/:id` fetch already got 304s (it never had `no-store`).
+- **Checked:** laptop dev server, Chrome DevTools, "Slow 4G". Before: every `home` poll `200`, 0.8 kB transferred. After: first poll after a reload `200`, then every poll `304`, 0.2 kB (headers only). Time per poll unchanged (~590 ms = the throttling delay; a 304 still makes one trip to the server, it only saves the bytes). Laptop data has few matches; the saving per poll grows with the number of matches. `node test.js`: All tests passed. NOT checked: on the real server and on a phone; the Points tab (`/api/standings`) was not looked at in DevTools.
+- **Undo:** `git revert <this commit>`, then the normal deploy (`docker compose build`, `docker compose up -d`).
+
 ## 2026-11-12 - Test for the inner safety net of `applyAction`
 - **What:** new case 8 in `test-integration.js`. In the TEST database only, a temporary trigger refuses to save one action, so the error happens in the middle of `applyAction` (the INSERT), after login, permission check and match read. Checks: the phone gets `{ok:false, error:"server error", retry:true}`; the server log says `applyAction failed:` (the inner net answered, not the outer one); a retry with the same id gets the same answer and nothing is saved (a "stuck" entry); Postgres shows no server connection left inside the failed transaction; 12 more actions on the same match work; after the trigger is removed, the same id saves normally. The trigger is always removed (`finally`). No server code changed.
 - **Why:** the outage test (case 6) fails earlier, in the permission check, so this branch (`server.js` applyAction `catch`: ROLLBACK + `retry:true`) had never run in a test.

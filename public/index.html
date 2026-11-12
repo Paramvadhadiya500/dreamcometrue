@@ -185,11 +185,11 @@
 
   async function refresh() {
     try {
-      const r = await fetch("/api/home", { cache: "no-store" });
+      const r = await fetch("/api/home", { cache: "no-cache" });
       if (!r.ok) throw new Error("bad status " + r.status);
       home = await r.json();
       if (tab === "points") {
-        const s = await fetch("/api/standings", { cache: "no-store" });
+        const s = await fetch("/api/standings", { cache: "no-cache" });
         if (s.ok) standings = await s.json();
       }
       loaded = true;
