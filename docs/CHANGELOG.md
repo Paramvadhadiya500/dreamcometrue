@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Deployed Phase 3 and Phase 4 of the student-pages plan on the server (by hand)
+- **What:** normal deploy of `e0c5cd9`: `backup.sh` (backup saved, 6412 bytes, and copied to S3), `git pull` (`5f964df..e0c5cd9` fast-forward), `docker compose build` (only the `COPY . .` layer changed; packages cached; the known harmless "Bake / buildx" warning), `docker compose up -d` (db and redis healthy, app recreated, Caddy kept running). No database change, no Redis flush, no Caddy restart needed.
+- **Note:** the server was already on `5f964df` (the last Phase 3 commit) before this pull, not on the Phase 1 code the changelog last recorded; that earlier pull is not recorded here, and whether Phase 3 was built and running before is not known. From now on both phases are running.
+- **Checked:** GitHub run for `e0c5cd9`: all 4 jobs green (see the entry below). NOT checked yet at the time of writing: `docker compose ps`, `/ready`, `./scripts/security-check.sh`, and a real phone (light/dark, Back between tabs, "Updated ... ago", tab icon).
+- **Undo:** server (Ubuntu bash, `~/dreamcometrue`): `git checkout c7ebd5a` (Phase 1 code) or `git checkout 5f964df` (Phase 3 only), then `docker compose build`, `docker compose up -d` (no database change to undo). Then fix properly on the laptop with `git revert`.
+
 ## 2026-11-21 - Phase 4 pushed; all 4 CI jobs green on GitHub
 - **What:** `git push` of `3c4ed1f`..`e0c5cd9` (Phase 3 CI note and the 4 Phase 4 commits: smarter polling, keyed card updates, loading/updated/problem states, tabs as links). NOT deployed yet (the server still runs Phase 1; Phase 3 and 4 wait for the user's deploy).
 - **Checked:** GitHub run for `e0c5cd9`: success; `unit`, `image`, `integration` and `e2e` (29 browser tests) all green.
