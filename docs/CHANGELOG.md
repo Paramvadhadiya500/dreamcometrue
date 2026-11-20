@@ -9,6 +9,13 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Deployed Phase 5 of the student-pages plan on the server (by hand); checks done
+- **What:** normal deploy of `2992304`: `backup.sh` (backup saved, 6411 bytes, copied to S3), `git pull` (`e0c5cd9..2992304` fast-forward), `docker compose build` (only the `COPY . .` layer changed; the known harmless "Bake / buildx" warning), `docker compose up -d` (app recreated; db and redis healthy; Caddy kept running). No database change, no Redis flush, no Caddy restart.
+- **Checked:** GitHub run for `2992304`: all 4 jobs green. Server: `docker compose ps`: all 4 containers up, db and redis healthy; `/ready` -> `{"ok":true,"failed":[]}`; `./scripts/security-check.sh`: 27 passed, 0 warnings, 0 failed. The user on a real phone: light and dark mode, a point added on the scorer page made the number flash on the match page, mobile data off showed the red "No internet connection..." bar at once, on again removed it: all worked. These checks also cover Phase 3 and 4 (deployed in the entry below; their own after-deploy checks were not run separately).
+- **Open question (not fixed, no action taken):** `docker compose ps` showed db, redis and Caddy "Up About a minute" while `up -d` did not recreate them (only the app, "Up 2 seconds"); the Phase 1 deploy entry saw the same ("Up 5 minutes"). `backup.sh` only runs `docker compose exec ... pg_dump`, so it is not the cause. Not known yet whether the server rebooted, the Docker service restarted (e.g. an automatic update) or the containers restarted; read-only commands to find out were given to the user (`uptime`, `docker inspect ... StartedAt / RestartCount`, `journalctl -u docker`).
+- **NOT checked:** a real screen reader (NVDA / TalkBack) on the live site.
+- **Undo:** server (Ubuntu bash, `~/dreamcometrue`): `git checkout e0c5cd9` (Phase 4 code), `docker compose build`, `docker compose up -d` (no database change to undo). Then fix properly on the laptop with `git revert`.
+
 ## 2026-11-21 - Phase 5 pushed; all 4 CI jobs green on GitHub
 - **What:** `git push` of `68e825a`..`2992304` (two changelog notes and the 4 Phase 5 commits: scoreboard, number flash + home double-flash fix, screen-reader announcer, connection states). NOT deployed yet (the server runs Phase 4).
 - **Checked:** GitHub run for `2992304`: success; `unit`, `image`, `integration` and `e2e` (45 browser tests) all green.
