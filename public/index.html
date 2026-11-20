@@ -173,6 +173,13 @@
   let shown = new Map();           // key -> { sig, node } of the last render
   let next = null;                 // the same, filled by the render in progress
 
+  // A flash is over (or stopped): take "changed" away, so moving the card later does not flash it again.
+  // The "stopped" event of an OLD flash arrives a moment AFTER a new flash started (a card that changed twice
+  // quickly): so only remove the class when no animation is running on the card any more.
+  function endFlash(x) {
+    if (x.target.getAnimations().length === 0) x.target.classList.remove("changed");
+  }
+
   function keep(key, sig, build, flash) {
     while (next.has(key)) key += "+";              // the same key twice in one list: keep them apart
     const old = shown.get(key);
@@ -188,12 +195,13 @@
       if (flash) {
         void node.offsetWidth;                     // the browser must see the class gone, or the flash would not play again
         node.classList.add("changed");
-        const done = () => node.classList.remove("changed");   // so moving the card later does not flash it again
-        node.addEventListener("animationend", done, { once: true });
-        node.addEventListener("animationcancel", done, { once: true });
       }
     } else {
       node = build();
+      if (flash) {                                 // once per card: take "changed" away when its flash is over
+        node.addEventListener("animationend", endFlash);
+        node.addEventListener("animationcancel", endFlash);
+      }
     }
     next.set(key, { sig, node });
     return node;

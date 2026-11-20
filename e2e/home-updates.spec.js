@@ -34,6 +34,22 @@ test("a refresh keeps unchanged cards, updates a changed card in place, and only
   await expect(card(page, "m1")).not.toHaveClass(/changed/);
 });
 
+test("a card that changes twice quickly flashes again from the start", async ({ page }) => {
+  const data = { home: { matches: [match("m1", "live", "Red m1 0 - 0 Blue m1")], competitions: ["Football"] } };
+  await open(page, data);
+  data.home.matches = [match("m1", "live", "Red m1 1 - 0 Blue m1")];
+  await refreshNow(page);
+  await expect(card(page, "m1")).toContainText("1 - 0");
+  await page.waitForTimeout(800);                                              // first flash half done
+  data.home.matches = [match("m1", "live", "Red m1 2 - 0 Blue m1")];
+  await refreshNow(page);
+  await expect(card(page, "m1")).toContainText("2 - 0");
+  await page.waitForTimeout(100);                                              // the old flash's "cancel" event arrives now
+  const t = await card(page, "m1").evaluate((el) => el.getAnimations().map((a) => a.currentTime));
+  expect(t.length, "a flash is running").toBe(1);
+  expect(t[0], "and it started again").toBeLessThan(500);
+});
+
 test("keyboard focus stays on a card through refreshes, also when that card's score changes", async ({ page }) => {
   const data = { home: { matches: [match("m1", "live", "Red m1 0 - 0 Blue m1"), match("m2", "live", "Red m2 0 - 0 Blue m2")], competitions: ["Football"] } };
   await open(page, data);

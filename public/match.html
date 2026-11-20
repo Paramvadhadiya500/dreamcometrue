@@ -48,6 +48,13 @@
   #crExtras { margin: 10px 0 0; }
 
   .result { font-size: 18px; font-weight: bold; color: var(--result); margin: 14px 0 0; }
+
+  /* A number that just changed flashes once: pale background and a small grow, fading back in 1.5 s.
+     Only background and transform are animated (cheap for the phone). "Reduce motion": base.css makes it instant. */
+  #sA, #sB, #pA, #pB, #crBig { display: inline-block; border-radius: 6px; }
+  #crBig { padding: 0 6px; }
+  @keyframes bump { from { background-color: var(--flash); transform: scale(1.12); } }
+  .bump { animation: bump 1.5s ease-out; }
 </style>
 </head>
 <body>
@@ -114,6 +121,30 @@
     showConn(gotScore ? "Reconnecting... the score below may be out of date" : "Cannot reach the server. Trying again...");
   });
 
+  // Put a score number on the page. If it really changed (and it is not the first score after opening),
+  // it flashes once. Same number again (a repeated or newer update with the same score): nothing happens.
+  let firstScore = true;
+  function setNum(id, value) {
+    const e = $(id);
+    const text = String(value);
+    if (e.textContent === text) return;
+    e.textContent = text;
+    if (firstScore) return;
+    e.classList.remove("bump");
+    void e.offsetWidth;                    // the browser must see the class gone, or the animation would not play again
+    e.classList.add("bump");
+  }
+  // When the flash ends (or is stopped), take the class away again. But the "stopped" event of an OLD flash
+  // arrives a moment AFTER a new flash has started (a number that changed twice quickly): so only remove the
+  // class when no animation is running on the element any more.
+  function endFlash(x) {
+    if (x.target.getAnimations().length === 0) x.target.classList.remove("bump");
+  }
+  for (const id of ["sA", "sB", "pA", "pB", "crBig"]) {
+    $(id).addEventListener("animationend", endFlash);
+    $(id).addEventListener("animationcancel", endFlash);
+  }
+
   // "CSE won", "Draw", or the engine's own text (cricket: "CSE won by 5 runs")
   function resultText(s) {
     if (s.resultText) return s.resultText;
@@ -124,7 +155,7 @@
   function showCricket(s) {
     const ci = s.innings[s.inning - 1];
     const first = s.innings[0];
-    $("crBig").textContent = teamName(s, ci.battingTeam) + " " + ci.runs + "/" + ci.wickets;
+    setNum("crBig", teamName(s, ci.battingTeam) + " " + ci.runs + "/" + ci.wickets);
     $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs · Run rate " + ci.runRate.toFixed(2);
 
     let chase = "";
@@ -170,27 +201,32 @@
 
     if (isCR) {
       showCricket(s);
-      return;
+    } else {
+      showDuel(s, isTT, isVB);
     }
+    firstScore = false;
+  });
+
+  function showDuel(s, isTT, isVB) {
     $("nameA").textContent = teamName(s, "A");
     $("nameB").textContent = teamName(s, "B");
     if (isTT || isVB) {
-      $("sA").textContent = isVB ? s.setsA : s.gamesA;
-      $("sB").textContent = isVB ? s.setsB : s.gamesB;
+      setNum("sA", isVB ? s.setsA : s.gamesA);
+      setNum("sB", isVB ? s.setsB : s.gamesB);
       $("unit").textContent = isVB ? "sets" : "games";
       $("curLabel").textContent = isVB
         ? (s.isDeciding ? "Deciding set, to " + s.target : "Set " + s.currentSet + ", to " + s.target)
         : "Current game";
-      $("pA").textContent = s.pointsA;
-      $("pB").textContent = s.pointsB;
+      setNum("pA", s.pointsA);
+      setNum("pB", s.pointsB);
       const done = isVB ? s.finishedSets : s.finishedGames;
       $("history").textContent = done.length ? (isVB ? "Sets: " : "Games: ") + done.map((g) => g.join("-")).join(", ") : "";
     } else {
-      $("sA").textContent = s.scoreA;
-      $("sB").textContent = s.scoreB;
+      setNum("sA", s.scoreA);
+      setNum("sB", s.scoreB);
       $("unit").textContent = "";
     }
-  });
+  }
 
   // place, time and competition
   async function loadMeta() {
