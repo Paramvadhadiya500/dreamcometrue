@@ -6,11 +6,12 @@
 <title>Match</title>
 <link rel="stylesheet" href="/css/base.css">
 <style>
-  body { padding: 0 12px 24px; }
+  /* text color: the browser's own (black in light, light in dark, thanks to color-scheme in base.css) */
+  body { padding: 0 12px 24px; background: var(--surface); }
   #conn { display: none; background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; margin: 0 -12px 8px; }
-  a.back { display: inline-block; margin: 12px 0 4px; color: var(--brand); text-decoration: none; font-size: 16px; }
+  a.back { display: inline-block; margin: 12px 0 4px; color: var(--link); text-decoration: none; font-size: 16px; }
   .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; }
-  .free { display: inline-block; background: var(--highlight); padding: 4px 10px; font-weight: bold; border-radius: 4px; }
+  .free { display: inline-block; background: var(--highlight); color: var(--on-highlight); padding: 4px 10px; font-weight: bold; border-radius: 4px; }
   .vs { font-size: 20px; font-weight: bold; margin-top: 8px; }
 </style>
 </head>

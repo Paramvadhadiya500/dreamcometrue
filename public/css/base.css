@@ -1,9 +1,14 @@
 /* Shared design for the student pages (index.html, match.html).
    Design tokens: every color is written ONCE here and used by name, e.g. color: var(--text-muted).
-   To change a color everywhere, change it here. Dark mode (later step) will give the same names other values.
-   Each page links this file BEFORE its own <style>, so a page rule can still override a rule from here. */
+   To change a color everywhere, change it here. Dark mode (bottom of this file) gives the same names other values.
+   Each page links this file BEFORE its own <style>, so a page rule can still override a rule from here.
+   Contrast rule (WCAG AA): text at least 4.5 : 1 against its background, in light AND dark. */
 
 :root {
+  /* the page supports both themes: the browser also switches its own parts
+     (default text color, dropdowns, buttons without a color, scrollbars) */
+  color-scheme: light dark;
+
   /* page and text */
   --bg: #f4f6f8;             /* home page background */
   --surface: #fff;           /* cards, tab bar, tables */
@@ -12,8 +17,9 @@
   --heading-muted: #345;     /* day headings in the schedule */
 
   /* brand */
-  --brand: #1f3a5f;          /* navy: header, active tab, back link */
+  --brand: #1f3a5f;          /* navy BACKGROUND: header, active tab */
   --on-brand: #fff;          /* text on navy */
+  --link: #1f3a5f;           /* link TEXT (match page back link); same navy in light, lighter in dark */
 
   /* meaning */
   --live: #d22;              /* LIVE label, left edge of a live card */
@@ -23,7 +29,8 @@
   --note: #a40;              /* "Connection problem" text on the home page */
   --alert: #c33;             /* match page "Reconnecting..." bar (almost the same red as --live) */
   --on-alert: #fff;          /* text on the alert bar */
-  --highlight: #fc0;         /* FREE HIT */
+  --highlight: #fc0;         /* FREE HIT background */
+  --on-highlight: #000;      /* text on yellow: dark in BOTH themes */
 
   /* lines */
   --border: #ddd;            /* line under the tab bar */
@@ -35,6 +42,33 @@
   --radius: 8px;             /* cards and tables */
   --shadow: 0 1px 2px #0002; /* cards */
   --font: system-ui, sans-serif;   /* the phone's own font: nothing to download */
+}
+
+/* Dark mode: the phone (or computer) is set to dark. Same names, other values; nothing else changes.
+   Contrast measured for every pair (text on its background): all at least 4.5 : 1, card edges at least 3 : 1.
+   Not changed here: red alert bar and yellow FREE HIT (their text already contrasts in both themes). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* brighter navy: the light one (#1f3a5f) is only 1.4 : 1 against the dark tab bar, so the chosen tab
+       did not stand out. This one: 3.1 : 1 against the tab bar, white text on it 5.1 : 1. */
+    --brand: #3a6fb3;
+    --bg: #0f1419;
+    --surface: #1b222b;
+    --text: #e6e9ed;
+    --text-muted: #a5afba;
+    --heading-muted: #a9bdd3;
+    --link: #8fb8ef;
+    --live: #ff6b6b;
+    --done: #3cbf8f;
+    --result: #5fd3b0;
+    --upcoming: #77828f;
+    --note: #ffb454;
+    --border: #2c3540;
+    --control-border: #3a4552;
+    --line: #2a323c;
+    --table-head: #25303c;
+    --shadow: 0 1px 2px #0008;
+  }
 }
 
 body { font-family: var(--font); margin: 0; }
