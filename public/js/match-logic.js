@@ -58,7 +58,19 @@
     };
   }
 
-  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer };
+  // Text of the connection bar at the top ("" = no bar).
+  //   offline:   the phone says it has no network (window "offline" event)
+  //   problem:   the live connection is down or could not be made (socket "disconnect" / "connect_error")
+  //   lastScore: time of the last score shown, e.g. "14:05:12" (null = no score yet)
+  function connectionText(offline, problem, lastScore) {
+    var age = lastScore ? " The score below is from " + lastScore + "." : "";
+    if (offline) return "No internet connection." + age;
+    if (!problem) return "";
+    if (!lastScore) return "Cannot reach the server. Trying again...";
+    return "Reconnecting..." + age;
+  }
+
+  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MatchLogic = api;
 })(this);

@@ -24,7 +24,7 @@ test("server stops -> reconnecting bar; server back -> bar gone and new points a
   // the server process ends: the browser's connection breaks
   await server.stop();
   await expect(bar).toBeVisible();
-  await expect(bar).toHaveText("Reconnecting... the score below may be out of date");
+  await expect(bar).toHaveText(/^Reconnecting\.\.\. The score below is from .*\d\d.*\.$/);
   await expect(page.locator("#sA")).toHaveText("0");          // the old score stays on screen
 
   // the server starts again on the SAME port; Socket.IO retries by itself (about 1-5 s between tries)

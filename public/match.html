@@ -12,7 +12,9 @@
 <style>
   body { background: var(--bg); color: var(--text); }
   .page { max-width: 640px; margin: 0 auto; padding: 0 12px 24px; }
-  #conn { display: none; background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; }
+  /* connection bar: role="status" in the HTML; empty = no problem = no space (but still in the page) */
+  #conn { background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; }
+  #conn:empty { padding: 0; }
   a.back { display: inline-block; margin: 12px 0 4px; color: var(--link); text-decoration: none; font-size: 16px; }
   h1 { font-size: 22px; margin: 4px 0 2px; }
   #meta { margin: 0; }
@@ -58,7 +60,7 @@
 </style>
 </head>
 <body>
-<div id="conn">Reconnecting... the score below may be out of date</div>
+<div id="conn" role="status"></div>
 <!-- Screen readers only: a short sentence when the score changes (at most one per 8 s). It must exist,
      empty, from the start: a live region added together with its text is often not read out. -->
 <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
@@ -106,24 +108,37 @@
 
   const socket = io();
   let latest = 0;                          // newest version seen for this match
-  let gotScore = false;                    // has any score arrived since the page opened?
 
   const teamName = (s, t) => (t === "A" ? s.teamA : s.teamB) || "Team " + t;
 
-  // the red bar at the top: empty text hides it
-  function showConn(text) {
-    $("conn").textContent = text;
-    $("conn").style.display = text ? "block" : "none";
+  // ---------- connection bar ----------
+  // Text from MatchLogic.connectionText (tested in test.js). The bar has role="status": screen readers
+  // read it out. Empty = no problem: it takes no space but stays in the page (so the next message is read).
+  let offline = false;                     // the phone says it has no network ("offline" event)
+  let problem = false;                     // the live connection is down or could not be made
+  let lastScore = null;                    // time the last score arrived, e.g. "14:05:12"
+  const timeOfDay = new Intl.DateTimeFormat([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  function showConn() {
+    $("conn").textContent = MatchLogic.connectionText(offline, problem, lastScore);
   }
 
   function join() { if (matchId) socket.emit("join-match", matchId); }
-  socket.on("connect", () => { showConn(""); join(); });
-  socket.on("disconnect", () => { showConn("Reconnecting... the score below may be out of date"); });
+  socket.on("connect", () => { problem = false; showConn(); join(); });
+  socket.on("disconnect", () => { problem = true; showConn(); });
   // The server cannot be reached. This also happens when the page OPENS while the server is down:
   // without this the page said "Loading..." forever. Socket.IO keeps trying again by itself.
-  socket.on("connect_error", () => {
-    showConn(gotScore ? "Reconnecting... the score below may be out of date" : "Cannot reach the server. Trying again...");
-  });
+  socket.on("connect_error", () => { problem = true; showConn(); });
+
+  // Reconnect at once when it can work again, instead of waiting for Socket.IO's next try (up to ~5 s), and
+  // also when Socket.IO gave up on its own (a connection closed while the phone slept). connect() does
+  // nothing harmful when a connection is already being made.
+  function reconnectNow() { if (!socket.connected) socket.connect(); }
+  // The phone's network: "offline" says so at once (the live connection notices only after its heartbeat
+  // runs out, up to ~45 s); "online" tries again at once. navigator.onLine can say "online" on Wi-Fi
+  // without internet, so it is only a hint: the bar for that case comes from the socket itself.
+  window.addEventListener("offline", () => { offline = true; showConn(); });
+  window.addEventListener("online", () => { offline = false; showConn(); reconnectNow(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reconnectNow(); });
 
   // Put a score number on the page. If it really changed (and it is not the first score after opening),
   // it flashes once. Same number again (a repeated or newer update with the same score): nothing happens.
@@ -195,7 +210,7 @@
     if (s.matchId !== matchId) return;
     if (s.version < latest) return;        // old news, ignore
     latest = s.version;
-    gotScore = true;
+    lastScore = timeOfDay.format(new Date());
 
     $("name").textContent = s.name;
     document.title = s.name;

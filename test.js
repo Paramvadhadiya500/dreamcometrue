@@ -1045,6 +1045,16 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(said.length, 4, "back to what was said last: nothing to say");
   clock = 38500; announce("seven");                  // that silent moment must not start a new 8 s wait
   assert.deepStrictEqual(said.slice(-1), ["38500: seven"], "said at once (last real sentence was 8.5 s ago)");
+
+  // the connection bar text
+  const { connectionText } = require("./public/js/match-logic");
+  assert.strictEqual(connectionText(false, false, "14:05:12"), "", "all fine: no bar");
+  assert.strictEqual(connectionText(false, false, null), "", "all fine before the first score too");
+  assert.strictEqual(connectionText(false, true, null), "Cannot reach the server. Trying again...");
+  assert.strictEqual(connectionText(false, true, "14:05:12"), "Reconnecting... The score below is from 14:05:12.");
+  assert.strictEqual(connectionText(true, false, "14:05:12"), "No internet connection. The score below is from 14:05:12.",
+    "offline wins, even while the old connection does not know it yet");
+  assert.strictEqual(connectionText(true, true, null), "No internet connection.");
 }
 
 // ---------- student home page: "Updated ... ago" ----------
