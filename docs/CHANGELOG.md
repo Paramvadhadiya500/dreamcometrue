@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - GitHub runs the E2E tests (4th CI job)
+- **What:** `.github/workflows/test.yml`: new job `e2e`, next to `unit`, `image` and `integration`. Same Postgres 16 and Redis 7 services and test URLs as the integration job, Node 22.23, `npm ci`, `npx playwright install --with-deps chromium` (browser + the Linux libraries it needs), `npm run test:e2e`. Only when a test fails: the Playwright report and traces are kept for 7 days as a download on the run page (`actions/upload-artifact@v7`). Limit 15 minutes. Phase 2, step 4 (last step of Phase 2) of the student-pages plan.
+- **Why:** a commit that breaks the student pages gets a red cross on GitHub before anyone deploys it (rule: deploy only a green commit).
+- **Checked:** the workflow file is valid YAML (4 jobs). `actions/upload-artifact` v7 exists (looked up on GitHub's public API; v7.0.0 since 2026-02-26). Laptop run with `CI=true` (as on GitHub: `test.only` forbidden, HTML report written): 5 passed; `playwright-report/` and `test-results/` are ignored by Git. NOT checked: the job itself on GitHub; it runs on the next push (not pushed yet). If it fails there, download "playwright-report" from the run page.
+- **Undo:** `git revert <this commit>` (CI only; nothing to deploy).
+
 ## 2026-11-20 - E2E scenarios 2 and 3: server down / back, and 360 px phone size
 - **What:** new `e2e/reconnect.spec.js`: starts its OWN `server.js` on a free port (so stopping it does not break the other tests), opens a match page, stops the server -> the red bar must say "Reconnecting... the score below may be out of date" and the old score stays; starts the server again on the same port -> the bar must go away (15 s limit) and a new point must reach the page (it re-joined its match). New `e2e/phone-size.spec.js` (360 x 740, phone mode): home page on all 4 tabs and the match page must be laid out 360 px wide and must not scroll sideways. `e2e/helpers.js`: new `freePort()`. Phase 2, step 3 of the student-pages plan (written by Claude: no questions that day).
 - **Why:** the coming redesign touches the connection bar and the layout of both pages; these tests must be green before it.
