@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Deployed Phase 1 of the student-pages plan on the server (by hand)
+- **What:** normal deploy of `c7ebd5a` (the 7 Phase 1 commits `f4f139d`..`c7ebd5a`: 304 on home polls, minified Socket.IO client, one home request at a time, dropdown rebuilt only on change, Points "Loading...", match page "Cannot reach the server", `join-match` id check). `migrate.js`: "Database is up to date" (no database change in these commits). `docker compose up -d`: only the app was recreated; no Redis flush (no engine or state change), no Caddy restart (Caddyfile unchanged).
+- **Checked:** GitHub run for `c7ebd5a`: success (unit tests, image build, integration test with the new case 9). Server: `docker compose ps`: all 4 containers Up, db and redis healthy; `/ready` -> `{"ok":true,"failed":[]}`; `./scripts/security-check.sh`: 27 passed, 0 warnings, 0 failed (disk 41% full). Note: `ps` showed db, redis and caddy "Up 5 minutes" (they had restarted about 5 minutes before the deploy; the reason was not recorded here).
+- **Not recorded here:** the output of the read-only match-id check (`SELECT id FROM matches WHERE NOT (id ~ '^[a-z0-9-]{1,40}$')`, must be 0 rows), of `backup.sh` and `git pull`, and the browser/phone checks (home `304`, `socket.io.min.js`, a scorer point reaching the match page, Points "Loading..."). Do them (or confirm them) and add the result to this entry.
+- **Undo:** server (Ubuntu bash, `~/dreamcometrue`): `git checkout 7a234ca`, `docker compose build`, `docker compose up -d` (the previous code; no database change to undo). Then fix properly on the laptop with `git revert`.
+
 ## 2026-11-20 - Server: `join-match` ignores malformed match ids
 - **What:** `server.js`: one shared rule `MATCH_ID_RE = /^[a-z0-9-]{1,40}$/` (the rule `/api/match/:id` already had), now used by `/api/match/:id` AND by the socket event `join-match`. A `join-match` with an id that does not fit is ignored at once: before leaving the current match, before Redis and before the database. `test-integration.js`: new case 9; the `viewer()` helper also returns its socket. Phase 1, step 7 (last step of Phase 1) of the student-pages plan.
 - **Why:** `join-match` accepted any string up to the 10 KB message limit and looked it up in Redis and Postgres. Case 9 also found a real side effect in the old code: a malformed `join-match` made the socket LEAVE the match it was watching, so it got no more score updates.
