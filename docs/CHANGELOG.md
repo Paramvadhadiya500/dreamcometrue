@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Phase 4 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `3c4ed1f`..`e0c5cd9` (Phase 3 CI note and the 4 Phase 4 commits: smarter polling, keyed card updates, loading/updated/problem states, tabs as links). NOT deployed yet (the server still runs Phase 1; Phase 3 and 4 wait for the user's deploy).
+- **Checked:** GitHub run for `e0c5cd9`: success; `unit`, `image`, `integration` and `e2e` (29 browser tests) all green.
+- **Next (by hand, when the user decides):** normal deploy: backup, `git pull`, `docker compose build`, `docker compose up -d`. No database change, no Redis flush, no Caddy restart. Then on a real phone: light and dark, Back button between tabs, the "Updated" line.
+- **Undo:** see the entries below.
+
 ## 2026-11-21 - Home page: tabs are links (#live, #schedule, #results, #points); Back button and shared links work
 - **What:** `public/index.html`: the 4 tab buttons (`onclick="setTab(...)"`) become links inside `<nav class="tabs" aria-label="Sections">`; the chosen one has `aria-current="page"` and the CSS styles that attribute (so look and screen reader can never disagree). The chosen tab comes from the address (`location.hash`; anything unknown = Live) and a `hashchange` listener replaces `setTab()` (a click, Back and Forward all go through it; Points still loads its table). The links use the page font (the buttons used the browser's button font). Tests: new `e2e/home-tabs.spec.js` (4 tests); the 5 older E2E files now find the tabs as links, with `exact: true` (without it "Live" would also match every card that says LIVE). Phase 4, item 3 (commit D, the last of Phase 4; by Claude without questions, at the user's request).
 - **Why:** Back left the site instead of going to the previous tab; a shared link always opened on Live; screen readers were not told which tab was chosen.
