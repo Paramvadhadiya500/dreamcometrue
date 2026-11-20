@@ -8,3 +8,13 @@ test("home page opens and loads the match list", async ({ page }) => {
   await expect(page.locator("#list")).not.toHaveText("Loading...");
   await expect(page.locator("#list")).not.toContainText("Cannot load");
 });
+
+// Both student pages take their colors from /css/base.css. If that file does not load (wrong path, typo),
+// the page still works but loses its colors (the red "Reconnecting" bar has no red), and no other test sees it.
+for (const url of ["/", "/match.html?id=no-such-match"]) {
+  test("shared stylesheet base.css is loaded on " + url, async ({ page }) => {
+    await page.goto(url);
+    const brand = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand"));
+    expect(brand.trim(), "the --brand token from base.css").not.toBe("");
+  });
+}
