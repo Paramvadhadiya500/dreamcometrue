@@ -39,6 +39,15 @@ function assertPortFree(port) {
   });
 }
 
+// A port nobody uses right now (the system picks it). For tests that start their OWN server.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const s = net.createServer();
+    s.once("error", reject);
+    s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); });
+  });
+}
+
 function runNode(file, env) {
   return new Promise((resolve) => {
     const p = spawn(process.execPath, [file], { cwd: ROOT, env: { ...process.env, ...env } });
@@ -148,6 +157,6 @@ async function sendPoint(socket, matchId, team = "A", value = 1) {
 }
 
 module.exports = {
-  BASE_URL, PORT, checkTestDb, migrate, startServer, openDb, addScorer, addMatch, waitUntilOnHome,
+  BASE_URL, PORT, checkTestDb, migrate, freePort, startServer, openDb, addScorer, addMatch, waitUntilOnHome,
   scorerSocket, sendPoint,
 };
