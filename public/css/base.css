@@ -81,6 +81,8 @@
 }
 
 body { font-family: var(--font); margin: 0; }
+/* The "hidden" attribute must always hide, also on elements that have a display rule (e.g. display: grid). */
+[hidden] { display: none !important; }
 .small { color: var(--text-muted); }
 
 /* Keyboard focus: a clear ring around the element you reach with Tab.

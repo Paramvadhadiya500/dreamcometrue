@@ -10,45 +10,82 @@
 <meta name="theme-color" content="#3a6fb3" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="/css/base.css">
 <style>
-  /* text color: the browser's own (black in light, light in dark, thanks to color-scheme in base.css) */
-  body { padding: 0 12px 24px; background: var(--surface); }
-  #conn { display: none; background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; margin: 0 -12px 8px; }
+  body { background: var(--bg); color: var(--text); }
+  .page { max-width: 640px; margin: 0 auto; padding: 0 12px 24px; }
+  #conn { display: none; background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; }
   a.back { display: inline-block; margin: 12px 0 4px; color: var(--link); text-decoration: none; font-size: 16px; }
-  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; }
-  .free { display: inline-block; background: var(--highlight); color: var(--on-highlight); padding: 4px 10px; font-weight: bold; border-radius: 4px; }
-  .vs { font-size: 20px; font-weight: bold; margin-top: 8px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  #meta { margin: 0; }
+
+  /* The scoreboard card: status pill, then the score, then details. Numbers use equal-width digits
+     (tabular-nums), so "9" -> "10" does not make the row jump. */
+  .board { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+           padding: 16px 12px; margin-top: 14px; text-align: center; }
+  .pill { display: inline-block; margin: 0; padding: 2px 12px; border: 2px solid currentColor; border-radius: 999px;
+          font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+  .pill.live { color: var(--live); }
+  .pill.finished { color: var(--result); }
+
+  /* names left and right, big numbers in the middle (simple sport, table tennis, volleyball) */
+  .duel { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 10px; margin: 14px 0 0; }
+  .team { font-weight: bold; font-size: 17px; overflow-wrap: anywhere; }
+  .team.a { text-align: right; }
+  .team.b { text-align: left; }
+  .big { font-size: clamp(40px, 13vw, 64px); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .sep { margin: 0 0.12em; }
+  .unit { grid-column: 2; color: var(--text-muted); font-size: 14px; }
+  .current { font-size: 18px; margin: 12px 0 0; }
+  .current .nums { font-weight: bold; font-variant-numeric: tabular-nums; }
+  #history { margin: 8px 0 0; }
+
+  /* cricket */
+  .cr-big { font-size: clamp(32px, 11vw, 52px); font-weight: 800; line-height: 1.15; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+  .cr-overs { font-size: 17px; font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+  #crChase { font-weight: bold; margin: 10px 0 0; }
+  #crFirst { margin: 6px 0 0; }
+  .over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; margin: 10px 0 0; }
+  .free { display: inline-block; background: var(--highlight); color: var(--on-highlight); padding: 4px 10px; font-weight: bold; border-radius: 4px; margin: 10px 0 0; }
+  #crExtras { margin: 10px 0 0; }
+
+  .result { font-size: 18px; font-weight: bold; color: var(--result); margin: 14px 0 0; }
 </style>
 </head>
 <body>
 <div id="conn">Reconnecting... the score below may be out of date</div>
+<div class="page">
 <a class="back" href="/">&larr; All matches</a>
 
-<h2 id="name" style="margin:4px 0">Loading...</h2>
-<div id="meta" class="small"></div>
+<h1 id="name">Loading...</h1>
+<p id="meta" class="small"></p>
 
-<div id="tt" style="display:none">
-  <div class="vs" id="ttVs"></div>
-  <h1><span id="gA">0</span> : <span id="gB">0</span> <small id="ttUnit">games</small></h1>
-  <h2><span id="pA">0</span> - <span id="pB">0</span> <small id="ttCur">current game</small></h2>
-  <p id="history"></p>
+<section class="board" id="board" aria-label="Score" hidden>
+  <p id="status" class="pill"></p>
+
+  <!-- simple sport, table tennis, volleyball: names left and right, the big numbers in the middle -->
+  <div class="duel" id="duel" hidden>
+    <span class="team a" id="nameA"></span>
+    <span class="big"><span id="sA">0</span><span class="sep" aria-hidden="true">:</span><span id="sB">0</span></span>
+    <span class="team b" id="nameB"></span>
+    <span class="unit" id="unit"></span>
+  </div>
+
+  <!-- table tennis / volleyball: the game or set being played now, then the finished ones -->
+  <p class="current" id="current" hidden><span id="curLabel"></span>: <span class="nums"><span id="pA">0</span> - <span id="pB">0</span></span></p>
+  <p class="small" id="history"></p>
+
+  <div id="cricket" hidden>
+    <p class="cr-big" id="crBig"></p>
+    <p class="cr-overs" id="crOvers"></p>
+    <p id="crChase"></p>
+    <p id="crFirst" class="small"></p>
+    <p id="crOver" class="over"></p>
+    <p id="crFree" class="free" hidden>FREE HIT</p>
+    <p id="crExtras" class="small"></p>
+  </div>
+
+  <p class="result" id="result" hidden></p>
+</section>
 </div>
-
-<div id="simple" style="display:none">
-  <div class="vs" id="sVs"></div>
-  <h1><span id="sA">0</span> : <span id="sB">0</span></h1>
-</div>
-
-<div id="cricket" style="display:none">
-  <h1 id="crBig"></h1>
-  <h3 id="crOvers"></h3>
-  <p id="crChase"></p>
-  <p id="crFirst"></p>
-  <p id="crOver" class="over"></p>
-  <p id="crFree" class="free" style="display:none">FREE HIT</p>
-  <p id="crExtras" class="small"></p>
-</div>
-
-<p id="status"></p>
 
 <script src="/socket.io/socket.io.min.js"></script>
 <script>
@@ -77,18 +114,18 @@
     showConn(gotScore ? "Reconnecting... the score below may be out of date" : "Cannot reach the server. Trying again...");
   });
 
-  function statusText(s) {
-    if (s.status !== "finished") return "LIVE";
-    if (s.resultText) return "FINISHED. " + s.resultText;
-    if (s.winner === "draw") return "FINISHED. Draw";
-    return "FINISHED. " + teamName(s, s.winner) + " won";
+  // "CSE won", "Draw", or the engine's own text (cricket: "CSE won by 5 runs")
+  function resultText(s) {
+    if (s.resultText) return s.resultText;
+    if (s.winner === "draw") return "Draw";
+    return teamName(s, s.winner) + " won";
   }
 
   function showCricket(s) {
     const ci = s.innings[s.inning - 1];
     const first = s.innings[0];
     $("crBig").textContent = teamName(s, ci.battingTeam) + " " + ci.runs + "/" + ci.wickets;
-    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs   Run rate " + ci.runRate.toFixed(2);
+    $("crOvers").textContent = ci.overs + " / " + s.maxOvers + " overs · Run rate " + ci.runRate.toFixed(2);
 
     let chase = "";
     if (s.inning === 2 && s.status !== "finished") {
@@ -102,7 +139,7 @@
       : "";
 
     $("crOver").textContent = ci.recent.join("  ");
-    $("crFree").style.display = s.freeHit ? "inline-block" : "none";
+    $("crFree").hidden = !s.freeHit;
     $("crExtras").textContent = "Extras: " + ci.extras.total +
       " (wides " + ci.extras.wides + ", no balls " + ci.extras.noBalls +
       ", byes " + ci.extras.byes + ", leg byes " + ci.extras.legByes + ")";
@@ -116,31 +153,43 @@
 
     $("name").textContent = s.name;
     document.title = s.name;
+    $("board").hidden = false;
+    const finished = s.status === "finished";
+    $("status").textContent = finished ? "FINISHED" : "LIVE";
+    $("status").className = "pill " + (finished ? "finished" : "live");
+    $("result").textContent = finished ? resultText(s) : "";
+    $("result").hidden = !finished;
+
     const isTT = s.sport === "table_tennis";
     const isVB = s.sport === "volleyball";
     const isCR = s.sport === "cricket";
-    $("tt").style.display = isTT || isVB ? "block" : "none";
-    $("cricket").style.display = isCR ? "block" : "none";
-    $("simple").style.display = !isTT && !isCR && !isVB ? "block" : "none";
+    $("duel").hidden = isCR;
+    $("current").hidden = !(isTT || isVB);
+    $("history").hidden = !(isTT || isVB);
+    $("cricket").hidden = !isCR;
 
+    if (isCR) {
+      showCricket(s);
+      return;
+    }
+    $("nameA").textContent = teamName(s, "A");
+    $("nameB").textContent = teamName(s, "B");
     if (isTT || isVB) {
-      $("ttVs").textContent = teamName(s, "A") + " vs " + teamName(s, "B");
-      $("ttUnit").textContent = isVB ? "sets" : "games";
-      $("ttCur").textContent = isVB ? (s.isDeciding ? "deciding set, to " + s.target : "set " + s.currentSet + ", to " + s.target) : "current game";
-      $("gA").textContent = isVB ? s.setsA : s.gamesA;
-      $("gB").textContent = isVB ? s.setsB : s.gamesB;
+      $("sA").textContent = isVB ? s.setsA : s.gamesA;
+      $("sB").textContent = isVB ? s.setsB : s.gamesB;
+      $("unit").textContent = isVB ? "sets" : "games";
+      $("curLabel").textContent = isVB
+        ? (s.isDeciding ? "Deciding set, to " + s.target : "Set " + s.currentSet + ", to " + s.target)
+        : "Current game";
       $("pA").textContent = s.pointsA;
       $("pB").textContent = s.pointsB;
       const done = isVB ? s.finishedSets : s.finishedGames;
-      $("history").textContent = done.map((g) => g.join("-")).join(", ");
-    } else if (isCR) {
-      showCricket(s);
+      $("history").textContent = done.length ? (isVB ? "Sets: " : "Games: ") + done.map((g) => g.join("-")).join(", ") : "";
     } else {
-      $("sVs").textContent = teamName(s, "A") + " vs " + teamName(s, "B");
       $("sA").textContent = s.scoreA;
       $("sB").textContent = s.scoreB;
+      $("unit").textContent = "";
     }
-    $("status").textContent = statusText(s);
   });
 
   // place, time and competition
@@ -154,7 +203,7 @@
       if (m.stage === "knockout") parts.push("Knockout");
       if (m.venue) parts.push(m.venue);
       if (m.startTime) parts.push(new Date(m.startTime).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
-      $("meta").textContent = parts.join(" \u00b7 ");
+      $("meta").textContent = parts.join(" · ");
     } catch (e) { /* the score still works without this line */ }
   }
   loadMeta();

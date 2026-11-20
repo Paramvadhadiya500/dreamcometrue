@@ -20,7 +20,8 @@ test("a point from the scorer reaches the student's match page within 3 s", asyn
 
   // 4. the match page of THIS match, score 0 : 0
   await expect(page).toHaveURL("/match.html?id=" + m.id);
-  await expect(page.locator("#sVs")).toHaveText(m.teamA + " vs " + m.teamB);
+  await expect(page.locator("#nameA")).toHaveText(m.teamA);
+  await expect(page.locator("#nameB")).toHaveText(m.teamB);
   await expect(page.locator("#sA")).toHaveText("0");
   await expect(page.locator("#sB")).toHaveText("0");
 
