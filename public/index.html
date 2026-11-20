@@ -63,6 +63,7 @@
 <div class="note" id="note"></div>
 <main id="list"></main>
 
+<script src="/js/home-logic.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   let tab = "live";
@@ -213,9 +214,22 @@
   // One request at a time. On a slow network a reply can take longer than 10 s; without this,
   // requests pile up and an OLD reply that arrives last would put old scores back on the screen.
   let busy = false;
+  let failures = 0;                // errors in a row (0 = the last request worked)
+  let timer = null;                // the next planned refresh
+
+  // Plan the next refresh. The wait comes from HomeLogic.nextDelay (public/js/home-logic.js, tested in test.js):
+  // 10 s while a match is live, 60 s when nothing is, 10-20-40-60 s after errors, each +-20 % random spread.
+  // A hidden tab sends nothing but keeps planning (so polling never stops for good, even on a phone that
+  // does not send "visibilitychange" after a pause); coming back to the tab refreshes at once (below).
+  function schedule() {
+    clearTimeout(timer);
+    const anyLive = home.matches.some((m) => m.status === "live");
+    const wait = HomeLogic.nextDelay(failures, anyLive, Math.random());
+    timer = setTimeout(() => { if (document.visibilityState === "hidden") schedule(); else refresh(); }, wait);
+  }
 
   async function refresh() {
-    if (busy) return;              // a request is still running: skip this turn, the timer asks again later
+    if (busy) return;              // a request is still running: it plans the next one when it ends
     busy = true;
     try {
       const r = await fetch("/api/home", { cache: "no-cache" });
@@ -227,15 +241,18 @@
       }
       loaded = true;
       failed = false;
+      failures = 0;
       $("note").textContent = "";
     } catch (e) {
       failed = true;
+      failures++;
       $("note").textContent = loaded ? "Connection problem. Showing the last scores." : "";
     } finally {
       busy = false;                // always, after success AND after an error, or the page would never ask again
     }
     fillCompetitions();
     render();
+    schedule();
   }
 
   function setTab(t) {
@@ -245,7 +262,7 @@
   }
 
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
-  setInterval(() => { if (document.visibilityState !== "hidden") refresh(); }, 10000);
+  window.addEventListener("online", () => refresh());   // the phone's network is back: do not wait up to 60 s
   render();
   refresh();
 </script>

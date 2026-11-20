@@ -948,6 +948,28 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual([h6.rows[0].text, h6.rows[0].after], ["+1 for Team A", null]);
 }
 
+// ---------- student home page: how long to wait before the next /api/home request ----------
+{
+  const { nextDelay } = require("./public/js/home-logic");
+  // random = 0.5 is the middle of the +-20 % spread: the exact base wait
+  assert.strictEqual(nextDelay(0, true, 0.5), 10000, "worked, a match is live: 10 s");
+  assert.strictEqual(nextDelay(0, false, 0.5), 60000, "worked, nothing live: 60 s");
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 10].map((f) => nextDelay(f, true, 0.5)),
+    [10000, 20000, 40000, 60000, 60000, 60000], "errors in a row: 10, 20, 40, then 60 s at most");
+  assert.strictEqual(nextDelay(1, false, 0.5), 10000, "after an error: 10 s even when nothing is live");
+  assert.strictEqual(nextDelay(1000, true, 0.5), 60000, "very many errors: still 60 s (no Infinity, no overflow)");
+  // the spread: random 0 -> 80 %, random just under 1 -> just under 120 %
+  assert.strictEqual(nextDelay(0, true, 0), 8000);
+  assert.strictEqual(nextDelay(4, true, 0), 48000);
+  assert.strictEqual(nextDelay(0, true, 0.9999), 12000);     // 11999.6 rounded
+  assert.strictEqual(nextDelay(4, true, 0.9999), 71998);
+  for (let i = 0; i < 1000; i++) {
+    const r = Math.random(), f = Math.floor(Math.random() * 8), live = Math.random() < 0.5;
+    const w = nextDelay(f, live, r);
+    assert.ok(w >= 8000 && w <= 72000, "every wait between 8 and 72 s, got " + w);
+  }
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------
