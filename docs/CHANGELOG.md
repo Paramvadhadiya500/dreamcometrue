@@ -9,6 +9,11 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Phase 2 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `f7fa2e6`..`4c60e65` (Playwright setup, 3 scenarios, CI job). Nothing deployed: these commits only add tests and CI, the server image does not change.
+- **Checked:** GitHub run for `4c60e65`: success. `unit`, `image`, `integration` and the new `e2e` job all green; in `e2e` the Chromium install and "End-to-end tests" passed, "Keep the Playwright report" was skipped (it runs only on failure). The `image` job built the production image with the new `.dockerignore` lines and the app still runs as a normal user (this was "not checked" in the setup entry).
+- **Undo:** see the four entries below.
+
 ## 2026-11-20 - GitHub runs the E2E tests (4th CI job)
 - **What:** `.github/workflows/test.yml`: new job `e2e`, next to `unit`, `image` and `integration`. Same Postgres 16 and Redis 7 services and test URLs as the integration job, Node 22.23, `npm ci`, `npx playwright install --with-deps chromium` (browser + the Linux libraries it needs), `npm run test:e2e`. Only when a test fails: the Playwright report and traces are kept for 7 days as a download on the run page (`actions/upload-artifact@v7`). Limit 15 minutes. Phase 2, step 4 (last step of Phase 2) of the student-pages plan.
 - **Why:** a commit that breaks the student pages gets a red cross on GitHub before anyone deploys it (rule: deploy only a green commit).
