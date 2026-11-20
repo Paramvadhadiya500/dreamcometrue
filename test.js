@@ -970,6 +970,33 @@ const { createQueue } = require("./public/queue");
   }
 }
 
+// ---------- student home page: card signature (same signature = keep the card on screen) ----------
+{
+  const { cardSignature, CARD_FIELDS } = require("./public/js/home-logic");
+  const m = { id: "cr-1", name: "Final", sport: "cricket", competition: "Cricket", stage: "knockout", venue: "Ground 1",
+    startTime: "2026-12-01T09:00:00.000Z", hasTeams: true, teamA: "CSE", teamB: "ECE", status: "live",
+    headline: "CSE 45/2 (6.3)", resultText: "" };
+  assert.strictEqual(cardSignature(m), cardSignature({ ...m }), "same data, same signature");
+  for (const f of CARD_FIELDS) {
+    const changed = { ...m, [f]: typeof m[f] === "boolean" ? !m[f] : m[f] + "x" };
+    assert.notStrictEqual(cardSignature(changed), cardSignature(m), "a change of " + f + " must change the signature");
+  }
+  assert.strictEqual(cardSignature({ ...m, sport: "kabaddi" }), cardSignature(m), "a field the card does not show does not matter");
+  assert.strictEqual(cardSignature({ ...m, venue: undefined }), cardSignature({ ...m, venue: null }), "missing and null are the same");
+  // no mix-up between fields: ["a b", ""] must differ from ["a", "b"] (JSON keeps them apart; a plain join would not)
+  assert.notStrictEqual(cardSignature({ ...m, teamA: "A B", teamB: "" }), cardSignature({ ...m, teamA: "A", teamB: "B" }));
+
+  // the classic bug: card() shows a field that is not in the signature -> that card never updates.
+  // Read card() from the page and check every m.<field> it uses (the id is the key, not shown text).
+  const page = require("fs").readFileSync(require("path").join(__dirname, "public", "index.html"), "utf8");
+  const cardSource = page.match(/function card\(m\) \{([\s\S]*?)\n  \}/);
+  assert.ok(cardSource, "card(m) found in index.html");
+  const used = new Set([...cardSource[1].matchAll(/\bm\.([A-Za-z]+)/g)].map((x) => x[1]));
+  used.delete("id");
+  assert.ok(used.size >= 8, "card() reads the match fields");
+  for (const f of used) assert.ok(CARD_FIELDS.includes(f), "card() shows m." + f + " but it is not in CARD_FIELDS");
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------

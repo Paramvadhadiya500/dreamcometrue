@@ -31,6 +31,7 @@
   --alert: #c33;             /* match page "Reconnecting..." bar (almost the same red as --live) */
   --on-alert: #fff;          /* text on the alert bar */
   --focus: #1a5fb4;          /* keyboard focus ring: at least 3 : 1 against page, cards and tab bar */
+  --flash: #fff9d9;          /* a card that just changed, for a moment (all card text still >= 4.5 : 1 on it) */
   --highlight: #fc0;         /* FREE HIT background */
   --on-highlight: #000;      /* text on yellow: dark in BOTH themes */
 
@@ -61,6 +62,7 @@
     --heading-muted: #a9bdd3;
     --link: #8fb8ef;
     --focus: #9ec5ff;
+    --flash: #352f12;
     --live: #ff6b6b;
     --done: #3cbf8f;
     --result: #5fd3b0;
