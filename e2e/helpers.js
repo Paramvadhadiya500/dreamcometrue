@@ -95,16 +95,31 @@ async function addScorer(pool) {
   );
 }
 
-// A new 'simple' match (points only) that the test scorer may score. Returns its id.
+// A new 'simple' match (points only) that the test scorer may score. Returns { id, teamA, teamB }.
+// Team names are unique to this match: the test database keeps old matches until `down`,
+// and a Playwright locator that finds two cards stops with a "strict mode" error.
 let matchCount = 0;
-async function addMatch(pool, { teamA = "", teamB = "", competition = "E2E Test" } = {}) {
-  const id = "e2e-" + RUN + "-" + ++matchCount;
+async function addMatch(pool, { competition = "E2E Test" } = {}) {
+  const tag = RUN + "-" + ++matchCount;
+  const m = { id: "e2e-" + tag, teamA: "Red " + tag, teamB: "Blue " + tag };
   await pool.query(
     "INSERT INTO matches (id, name, sport, team_a, team_b, competition) VALUES ($1, $2, 'simple', $3, $4, $5)",
-    [id, "E2E match " + matchCount, teamA, teamB, competition]
+    [m.id, "E2E match " + tag, m.teamA, m.teamB, competition]
   );
-  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ($1, $2)", [SCORER, id]);
-  return id;
+  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ($1, $2)", [SCORER, m.id]);
+  return m;
+}
+
+// /api/home is cached for 3 s (home.js) and a match added straight into the database does not clear
+// that cache. Wait until the list really contains the match, so the page sees it on its FIRST load
+// (otherwise the card appears only at the page's next 10 s poll).
+async function waitUntilOnHome(url, matchId) {
+  for (let i = 0; i < 50; i++) {
+    const home = await (await fetch(url + "/api/home")).json();
+    if (home.matches.some((m) => m.id === matchId)) return;
+    await sleep(100);
+  }
+  throw new Error("match " + matchId + " did not appear in /api/home within 5 s");
 }
 
 // Logs in as the test scorer and connects like the scorer phone does. Returns the socket.
@@ -133,5 +148,6 @@ async function sendPoint(socket, matchId, team = "A", value = 1) {
 }
 
 module.exports = {
-  BASE_URL, PORT, checkTestDb, migrate, startServer, openDb, addScorer, addMatch, scorerSocket, sendPoint,
+  BASE_URL, PORT, checkTestDb, migrate, startServer, openDb, addScorer, addMatch, waitUntilOnHome,
+  scorerSocket, sendPoint,
 };
