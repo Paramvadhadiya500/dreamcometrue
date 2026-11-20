@@ -27,7 +27,9 @@
   --done: #2a7;              /* left edge of a finished card */
   --result: #176;            /* "X won" on a finished card */
   --upcoming: #bbb;          /* left edge of an upcoming card */
-  --note: #a40;              /* "Connection problem" text on the home page */
+  --note: #a40;              /* "Connection problem" text and the bar's left edge, on the home page */
+  --note-bg: #fff1cc;        /* that bar's background (text on it 5.3 : 1) */
+  --skeleton: #dfe4ea;       /* grey shapes of the skeleton cards while loading (decoration only) */
   --alert: #c33;             /* match page "Reconnecting..." bar (almost the same red as --live) */
   --on-alert: #fff;          /* text on the alert bar */
   --focus: #1a5fb4;          /* keyboard focus ring: at least 3 : 1 against page, cards and tab bar */
@@ -68,6 +70,8 @@
     --result: #5fd3b0;
     --upcoming: #77828f;
     --note: #ffb454;
+    --note-bg: #33270f;
+    --skeleton: #2f3843;
     --border: #2c3540;
     --control-border: #3a4552;
     --line: #2a323c;

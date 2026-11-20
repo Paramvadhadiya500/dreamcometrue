@@ -34,7 +34,18 @@
     return JSON.stringify(CARD_FIELDS.map(function (f) { return m[f] === undefined ? null : m[f]; }));
   }
 
-  var api = { nextDelay: nextDelay, cardSignature: cardSignature, CARD_FIELDS: CARD_FIELDS };
+  // "Updated ..." line under the tabs, from the age of the shown data in ms. Rough on purpose
+  // (10 s steps, then minutes): the line is redrawn every 5 s, more detail would only flicker.
+  function agoText(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));      // a clock that jumped back counts as "just now"
+    if (s < 10) return "Updated just now";
+    if (s < 60) return "Updated " + Math.floor(s / 10) * 10 + " s ago";
+    var min = Math.floor(s / 60);
+    if (min < 60) return "Updated " + min + " min ago";
+    return "Updated over an hour ago";
+  }
+
+  var api = { nextDelay: nextDelay, cardSignature: cardSignature, CARD_FIELDS: CARD_FIELDS, agoText: agoText };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.HomeLogic = api;
 })(this);

@@ -17,8 +17,9 @@
   .tabs { display: flex; gap: 6px; padding: 10px 12px; background: var(--surface); position: sticky; top: 0; border-bottom: 1px solid var(--border); z-index: 1; }
   .tabs button { flex: 1; font-size: 15px; padding: 10px 2px; border: 1px solid var(--control-border); background: var(--surface); border-radius: 6px; }
   .tabs button.on { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
-  .bar { padding: 10px 12px 0; }
+  .bar { padding: 10px 12px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   select { font-size: 16px; padding: 6px; max-width: 100%; }
+  .updated { color: var(--text-muted); font-size: 14px; text-align: right; }
   main { padding: 0 12px 24px; }
   a.card { display: block; background: var(--surface); border-radius: var(--radius); padding: 10px 12px; margin: 10px 0; text-decoration: none; color: inherit; border-left: 5px solid var(--upcoming); box-shadow: var(--shadow); }
   a.card.live { border-left-color: var(--live); }
@@ -34,8 +35,21 @@
   th, td { padding: 8px 4px; text-align: center; border-bottom: 1px solid var(--line); font-size: 15px; }
   th.team, td.team { text-align: left; padding-left: 10px; }
   th { background: var(--table-head); font-size: 13px; }
-  .note { color: var(--note); font-size: 14px; padding: 6px 12px; min-height: 18px; }
+  /* Connection problem bar. role="status" in the HTML: screen readers read it out when its text changes.
+     Empty = no problem: it takes no space, but stays in the page (a live region must exist BEFORE its message). */
+  .note { color: var(--note); background: var(--note-bg); border-left: 4px solid var(--note); border-radius: 6px;
+          font-size: 14px; padding: 8px 12px; margin: 10px 12px 0; }
+  .note:empty { padding: 0; margin: 0; border: 0; }
   .empty { color: var(--text-muted); padding: 12px 2px; }
+
+  /* Skeleton cards: grey shapes while the first answer is on its way (they are hidden from screen readers,
+     which get the text "Loading..." instead). A slow pulse; "reduce motion" stops it (base.css). */
+  .skeleton { background: var(--surface); border-radius: var(--radius); padding: 12px; margin: 10px 0;
+              border-left: 5px solid var(--upcoming); box-shadow: var(--shadow); animation: pulse 1.2s ease-in-out infinite alternate; }
+  .bone { height: 12px; border-radius: 4px; background: var(--skeleton); margin: 4px 0 10px; }
+  .bone.short { width: 40%; }
+  .bone.long { width: 75%; height: 16px; }
+  @keyframes pulse { to { opacity: 0.55; } }
 
   /* A card whose content just changed (new score, now live, finished) flashes once: its background starts
      pale yellow and fades back. For "reduce motion" base.css makes this almost instant. */
@@ -47,7 +61,7 @@
      still use the full width. Grid margins do not collapse, so 10 px + 10 px = 20 px between rows: 20 px columns match. */
   @media (min-width: 640px) {
     main { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
-    main > :not(a.card) { grid-column: 1 / -1; }
+    main > :not(.card) { grid-column: 1 / -1; }      /* .card: match cards AND skeleton cards sit in the columns */
   }
 </style>
 </head>
@@ -64,8 +78,9 @@
 <div class="bar">
   <label for="comp" class="sr-only">Sport</label>
   <select id="comp" onchange="render()"><option value="">All sports</option></select>
+  <span class="updated" id="updated"></span>
 </div>
-<div class="note" id="note"></div>
+<div class="note" id="note" role="status"></div>
 <main id="list"></main>
 
 <script src="/js/home-logic.js"></script>
@@ -178,6 +193,13 @@
     return node;
   }
 
+  function skeletonCard() {
+    const d = el("div", undefined, "card skeleton");
+    d.setAttribute("aria-hidden", "true");         // only a shape: nothing for a screen reader to read
+    d.append(el("div", undefined, "bone short"), el("div", undefined, "bone long"), el("div", undefined, "bone"));
+    return d;
+  }
+
   // Put exactly `nodes` into `box`, in this order, moving as few elements as possible.
   function setChildren(box, nodes) {
     const wanted = new Set(nodes);
@@ -198,8 +220,13 @@
     const matchCard = (m) => nodes.push(keep("card:" + m.id, HomeLogic.cardSignature(m), () => card(m), true));
 
     (function fill() {
-      if (!loaded) {
-        message(failed ? "Cannot load the scores. Trying again..." : "Loading...");
+      if (!loaded && failed) {
+        message("Cannot load the scores. Trying again...");
+        return;
+      }
+      if (!loaded) {               // first answer on its way: 3 grey card shapes; screen readers hear "Loading..."
+        nodes.push(keep("loading", "", () => el("p", "Loading...", "sr-only")));
+        for (let i = 0; i < 3; i++) nodes.push(keep("skeleton:" + i, "", skeletonCard));
         return;
       }
       const list = visible();
@@ -305,6 +332,7 @@
       loaded = true;
       failed = false;
       failures = 0;
+      lastOk = Date.now();
       $("note").textContent = "";
     } catch (e) {
       failed = true;
@@ -315,8 +343,17 @@
     }
     fillCompetitions();
     render();
+    showUpdated();
     schedule();
   }
+
+  // "Updated 20 s ago" next to the dropdown: how old the scores on screen are. Redrawn every 5 s.
+  // It is NOT a live region (a screen reader would hear it every 5 s); the problem bar above is.
+  let lastOk = null;               // time of the last good answer (null = none yet)
+  function showUpdated() {
+    $("updated").textContent = lastOk === null ? "" : HomeLogic.agoText(Date.now() - lastOk);
+  }
+  setInterval(() => { if (document.visibilityState !== "hidden") showUpdated(); }, 5000);
 
   function setTab(t) {
     tab = t;

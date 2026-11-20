@@ -997,6 +997,16 @@ const { createQueue } = require("./public/queue");
   for (const f of used) assert.ok(CARD_FIELDS.includes(f), "card() shows m." + f + " but it is not in CARD_FIELDS");
 }
 
+// ---------- student home page: "Updated ... ago" ----------
+{
+  const { agoText } = require("./public/js/home-logic");
+  const cases = [[0, "Updated just now"], [9999, "Updated just now"], [10000, "Updated 10 s ago"], [19999, "Updated 10 s ago"],
+    [35000, "Updated 30 s ago"], [59999, "Updated 50 s ago"], [60000, "Updated 1 min ago"], [119999, "Updated 1 min ago"],
+    [130000, "Updated 2 min ago"], [3599999, "Updated 59 min ago"], [3600000, "Updated over an hour ago"],
+    [-5000, "Updated just now"]];                                   // the phone's clock jumped back
+  for (const [ms, text] of cases) assert.strictEqual(agoText(ms), text, ms + " ms");
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------
