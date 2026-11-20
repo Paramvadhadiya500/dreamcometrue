@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Points tab says "Loading..." until the points table arrives
+- **What:** `public/index.html`: a `standingsLoaded` flag, set when `/api/standings` answers OK. Until then the Points tab shows "Loading the points table..." (or "Cannot load the points table. Trying again..." after a network error) instead of the table code. 6 lines added, 1 changed. Phase 1, step 5 of the student-pages plan.
+- **Why:** the points table is only fetched on the Points tab. On the first click the page still had the empty starting value, so it said "No finished group-stage matches yet." for a moment, which is wrong when there are finished matches. This also covers the small gap noted in the step 3 entry (a Points click while a request is running now shows "Loading..." until the next poll, not the wrong text).
+- **Checked:** throwaway Node script (not in the repo) that runs the page's real script with a fake page and a controllable fake fetch: right after clicking Points: "Loading the points table...", not the empty message; after the reply: the table (team shown); a real empty table still says "No finished group-stage matches yet."; network error before the first table: "Cannot load the points table. Trying again...". The same script FAILS on the old page. Step 3 and step 4 checks still pass. `node test.js`: All tests passed. NOT checked: in a real browser and on a phone. Not changed: if `/api/standings` answers an error status (e.g. 500) the tab keeps saying "Loading..." until a later poll succeeds.
+- **Undo:** `git revert <this commit>`, then the normal deploy (`docker compose build`, `docker compose up -d`).
+
 ## 2026-11-20 - Home page: sports dropdown is rebuilt only when the list of sports changes
 - **What:** `public/index.html` `fillCompetitions()`: remembers the list of sports now in the dropdown (as JSON text) and returns at once when the new list is the same. 7 added lines. Phase 1, step 4 of the student-pages plan.
 - **Why:** before, every poll (every 10 s) emptied and refilled the `<select>`. On some phones that closes or resets the dropdown while the student is choosing, and screen readers lose their place. The list of sports changes only when the admin adds or removes a sport.
