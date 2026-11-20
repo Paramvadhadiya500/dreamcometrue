@@ -29,6 +29,7 @@
   --note: #a40;              /* "Connection problem" text on the home page */
   --alert: #c33;             /* match page "Reconnecting..." bar (almost the same red as --live) */
   --on-alert: #fff;          /* text on the alert bar */
+  --focus: #1a5fb4;          /* keyboard focus ring: at least 3 : 1 against page, cards and tab bar */
   --highlight: #fc0;         /* FREE HIT background */
   --on-highlight: #000;      /* text on yellow: dark in BOTH themes */
 
@@ -58,6 +59,7 @@
     --text-muted: #a5afba;
     --heading-muted: #a9bdd3;
     --link: #8fb8ef;
+    --focus: #9ec5ff;
     --live: #ff6b6b;
     --done: #3cbf8f;
     --result: #5fd3b0;
@@ -73,3 +75,25 @@
 
 body { font-family: var(--font); margin: 0; }
 .small { color: var(--text-muted); }
+
+/* Keyboard focus: a clear ring around the element you reach with Tab.
+   :focus-visible = only when the keyboard is used; a tap or mouse click shows no ring (the browser decides). */
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* Text only screen readers read (for example a label the eye does not need). Still in the page, just not seen. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+/* The phone is set to "reduce motion": animations and transitions end at once.
+   0.01ms instead of none, so code that waits for "animation ended" still gets that event.
+   (No animation exists yet; the score flash in a later phase will follow this rule.) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
