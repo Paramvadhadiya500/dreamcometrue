@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Phase 3 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `db893ca`..`5f964df` (Phase 2 CI note and the 4 Phase 3 steps: tokens in `base.css`, dark mode, focus ring / label / reduced motion, 2 columns / icon / theme-color). NOT deployed yet.
+- **Checked:** GitHub run for `5f964df`: success; `unit`, `image`, `integration` and `e2e` (14 browser tests) all green.
+- **Next (by hand, when the user decides):** normal deploy on the server: backup, `git pull`, `docker compose build`, `docker compose up -d`. No database change, no Redis flush, no Caddy restart. Then look on a real phone in light and dark.
+- **Undo:** see the four entries below.
+
 ## 2026-11-20 - Student pages: 2 card columns on wide screens, tab icon, browser-bar color
 - **What:** `public/index.html`: one `@media (min-width: 640px)` rule: the match list (`main`) becomes a 2-column grid (20 px between columns; headings, tables and messages use the full width). Under 640 px nothing changes (mobile first: the CSS above the rule is the phone layout). Both pages: a tab icon written into the page as an SVG data URI (navy square, white ring, red "live" dot; no extra download) and `<meta name="theme-color">` for light (`#1f3a5f`) and dark (`#3a6fb3`), the same values as `--brand` (a meta tag cannot use CSS variables; a note in `base.css` says to change them together). New `e2e/wide-screen.spec.js` (2 tests); `e2e/smoke.spec.js`: icon and theme-color present on both pages. Phase 3, step 4 (last step of Phase 3) of the student-pages plan (done by Claude without questions, at the user's request).
 - **Why:** on a laptop or tablet one card was stretched over the whole width; real Chrome asked for `/favicon.ico` on every visit and got `404`; the phone's browser bar now matches the header.
