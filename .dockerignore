@@ -17,3 +17,7 @@ docs
 .claude
 .impeccable
 skills-lock.json
+e2e
+playwright.config.js
+test-results
+playwright-report

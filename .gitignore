@@ -4,3 +4,5 @@ node_modules
 *.log
 backups/
 *.sql.gz
+test-results/
+playwright-report/
