@@ -183,7 +183,13 @@
     if (keep && home.competitions.includes(keep)) sel.value = keep;
   }
 
+  // One request at a time. On a slow network a reply can take longer than 10 s; without this,
+  // requests pile up and an OLD reply that arrives last would put old scores back on the screen.
+  let busy = false;
+
   async function refresh() {
+    if (busy) return;              // a request is still running: skip this turn, the timer asks again later
+    busy = true;
     try {
       const r = await fetch("/api/home", { cache: "no-cache" });
       if (!r.ok) throw new Error("bad status " + r.status);
@@ -198,6 +204,8 @@
     } catch (e) {
       failed = true;
       $("note").textContent = loaded ? "Connection problem. Showing the last scores." : "";
+    } finally {
+      busy = false;                // always, after success AND after an error, or the page would never ask again
     }
     fillCompetitions();
     render();

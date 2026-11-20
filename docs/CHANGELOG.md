@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Home page: one request at a time (no pile-up, no old reply on top)
+- **What:** `public/index.html` `refresh()`: a `busy` flag. If a request to `/api/home` is still running, a new refresh (10 s timer, coming back to the tab, Points tab) does nothing; the flag is cleared in `finally`, so after a success AND after an error. 8 added lines. Phase 1, step 3 of the student-pages plan.
+- **Why:** on a slow network a reply can take more than 10 s. Before, the timer kept starting new requests: they piled up (DevTools custom profile 15 s latency: 4 `home` requests pending at once, each slower: 15, 25, 30, 35 s) and an OLD reply arriving last put an older score back on the home cards for up to 10 s (score going backwards, a finished match shown as live again, a wrong "Connection problem" note). The match page was not affected (Socket.IO + `version` check). The database is never wrong; only the screen was.
+- **Checked:** throwaway Node script (not in the repo) that runs the page's real script with a fake page and a fake fetch: while a request waits, 3 more refresh calls start no new request; after a success and after a network error the next refresh asks again. The same script FAILS on the old page (4 requests at once) and on a copy without the `finally` line. `node test.js`: All tests passed. NOT checked: in a real browser and on a phone after the change. Known small gap: clicking Points while a request is already past its standings step shows the empty-table text until the next poll (about 10 s); Phase 1 step 5 (Loading text) is planned for that.
+- **Undo:** `git revert <this commit>`, then the normal deploy (`docker compose build`, `docker compose up -d`).
+
 ## 2026-11-12 - Match page loads the minified Socket.IO client
 - **What:** `public/match.html` line 48: `/socket.io/socket.io.js` -> `/socket.io/socket.io.min.js` (1 line). Phase 1, step 2 of the student-pages plan. The Socket.IO server already serves both files (same version, from `node_modules/socket.io/client-dist`); no package or server change.
 - **Why:** it was the biggest file on the match page. On disk 153,519 bytes (readable copy) vs 47,295 bytes (minified); sent gzipped. Every student downloads it on the first visit, often on slow mobile data.
