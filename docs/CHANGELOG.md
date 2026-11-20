@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Phase 5 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `68e825a`..`2992304` (two changelog notes and the 4 Phase 5 commits: scoreboard, number flash + home double-flash fix, screen-reader announcer, connection states). NOT deployed yet (the server runs Phase 4).
+- **Checked:** GitHub run for `2992304`: success; `unit`, `image`, `integration` and `e2e` (45 browser tests) all green.
+- **Next (by hand, when the user decides):** normal deploy: backup, `git pull`, `docker compose build`, `docker compose up -d`. No database change, no Redis flush, no Caddy restart. Then on a real phone: a match page in light and dark, a score change (the number flashes), switching mobile data off (the bar appears) and on (it goes away).
+- **Undo:** see the entries below.
+
 ## 2026-11-21 - Match page: offline bar at once, time of the last score, reconnect at once
 - **What:** `public/js/match-logic.js`: `connectionText(offline, problem, lastScore)` (+ `test.js` tests): "No internet connection. The score below is from 14:05:12." / "Reconnecting... The score below is from 14:05:12." / "Cannot reach the server. Trying again..." / "" (no bar). `public/match.html`: the bar gets `role="status"` (screen readers read it) and, like the home page bar, stays in the page empty and without space when there is no problem; the time of the last score is remembered; the window `offline` event shows the bar at once and `online` clears it and reconnects at once; coming back to the tab (`visibilitychange`) reconnects at once when the connection is down (also when Socket.IO gave up on a connection closed while the phone slept). No "Connecting..." bar on purpose (it would flash red for half a second on every normal visit; the heading says "Loading..."). New `e2e/match-connection.spec.js` (2 tests); `e2e/reconnect.spec.js` expects the new text. Phase 5, item 4 (commit D, the last of Phase 5; by Claude without questions, at the user's request).
 - **Why:** a phone whose mobile data died kept showing an old score without warning until the Socket.IO heartbeat ran out (up to ~45 s); students could not tell how old the score was.
