@@ -1,0 +1,55 @@
+body { background: var(--bg); color: var(--text); }
+header { background: var(--brand); color: var(--on-brand); padding: 14px 16px; }
+header h1 { margin: 0; font-size: 22px; }
+.tabs { display: flex; gap: 6px; padding: 10px 12px; background: var(--surface); position: sticky; top: 0; border-bottom: 1px solid var(--border); z-index: 1; }
+/* The tabs are links (#live, #schedule, ...). The chosen one has aria-current="page": styling by that
+   attribute means the look and what a screen reader hears can never disagree. */
+.tabs a { flex: 1; font-size: 15px; padding: 10px 2px; border: 1px solid var(--control-border); background: var(--surface);
+          border-radius: 6px; color: var(--text); text-align: center; text-decoration: none; }
+.tabs a[aria-current="page"] { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+.bar { padding: 10px 12px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+select { font-size: 16px; padding: 6px; max-width: 100%; }
+.updated { color: var(--text-muted); font-size: 14px; text-align: right; }
+main { padding: 0 12px 24px; }
+a.card { display: block; background: var(--surface); border-radius: var(--radius); padding: 10px 12px; margin: 10px 0; text-decoration: none; color: inherit; border-left: 5px solid var(--upcoming); box-shadow: var(--shadow); }
+a.card.live { border-left-color: var(--live); }
+a.card.finished { border-left-color: var(--done); }
+.teams { font-weight: bold; font-size: 17px; margin-top: 2px; }
+.headline { margin-top: 4px; }
+.result { margin-top: 4px; font-weight: bold; color: var(--result); }
+.small { font-size: 14px; }
+.liveTag { color: var(--live); font-weight: bold; }
+h2.day { font-size: 16px; margin: 18px 0 0; color: var(--heading-muted); }
+h2.comp { font-size: 18px; margin: 18px 0 6px; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+th, td { padding: 8px 4px; text-align: center; border-bottom: 1px solid var(--line); font-size: 15px; }
+th.team, td.team { text-align: left; padding-left: 10px; }
+th { background: var(--table-head); font-size: 13px; }
+/* Connection problem bar. role="status" in the HTML: screen readers read it out when its text changes.
+   Empty = no problem: it takes no space, but stays in the page (a live region must exist BEFORE its message). */
+.note { color: var(--note); background: var(--note-bg); border-left: 4px solid var(--note); border-radius: 6px;
+        font-size: 14px; padding: 8px 12px; margin: 10px 12px 0; }
+.note:empty { padding: 0; margin: 0; border: 0; }
+.empty { color: var(--text-muted); padding: 12px 2px; }
+
+/* Skeleton cards: grey shapes while the first answer is on its way (they are hidden from screen readers,
+   which get the text "Loading..." instead). A slow pulse; "reduce motion" stops it (base.css). */
+.skeleton { background: var(--surface); border-radius: var(--radius); padding: 12px; margin: 10px 0;
+            border-left: 5px solid var(--upcoming); box-shadow: var(--shadow); animation: pulse 1.2s ease-in-out infinite alternate; }
+.bone { height: 12px; border-radius: 4px; background: var(--skeleton); margin: 4px 0 10px; }
+.bone.short { width: 40%; }
+.bone.long { width: 75%; height: 16px; }
+@keyframes pulse { to { opacity: 0.55; } }
+
+/* A card whose content just changed (new score, now live, finished) flashes once: its background starts
+   pale yellow and fades back. For "reduce motion" base.css makes this almost instant. */
+@keyframes changed { from { background-color: var(--flash); } }
+a.card.changed { animation: changed 1.5s ease-out; }
+
+/* Mobile first: everything above is the phone layout (1 column).
+   From 640 px wide (tablet, laptop) the match cards sit in 2 columns; headings, tables and messages
+   still use the full width. Grid margins do not collapse, so 10 px + 10 px = 20 px between rows: 20 px columns match. */
+@media (min-width: 640px) {
+  main { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
+  main > :not(.card) { grid-column: 1 / -1; }      /* .card: match cards AND skeleton cards sit in the columns */
+}

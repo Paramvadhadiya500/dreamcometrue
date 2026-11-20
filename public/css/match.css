@@ -1,0 +1,47 @@
+body { background: var(--bg); color: var(--text); }
+.page { max-width: 640px; margin: 0 auto; padding: 0 12px 24px; }
+/* connection bar: role="status" in the HTML; empty = no problem = no space (but still in the page) */
+#conn { background: var(--alert); color: var(--on-alert); padding: 10px; text-align: center; font-weight: bold; }
+#conn:empty { padding: 0; }
+a.back { display: inline-block; margin: 12px 0 4px; color: var(--link); text-decoration: none; font-size: 16px; }
+h1 { font-size: 22px; margin: 4px 0 2px; }
+#meta { margin: 0; }
+
+/* The scoreboard card: status pill, then the score, then details. Numbers use equal-width digits
+   (tabular-nums), so "9" -> "10" does not make the row jump. */
+.board { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+         padding: 16px 12px; margin-top: 14px; text-align: center; }
+.pill { display: inline-block; margin: 0; padding: 2px 12px; border: 2px solid currentColor; border-radius: 999px;
+        font-size: 13px; font-weight: bold; letter-spacing: 1px; }
+.pill.live { color: var(--live); }
+.pill.finished { color: var(--result); }
+
+/* names left and right, big numbers in the middle (simple sport, table tennis, volleyball) */
+.duel { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; column-gap: 10px; margin: 14px 0 0; }
+.team { font-weight: bold; font-size: 17px; overflow-wrap: anywhere; }
+.team.a { text-align: right; }
+.team.b { text-align: left; }
+.big { font-size: clamp(40px, 13vw, 64px); font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sep { margin: 0 0.12em; }
+.unit { grid-column: 2; color: var(--text-muted); font-size: 14px; }
+.current { font-size: 18px; margin: 12px 0 0; }
+.current .nums { font-weight: bold; font-variant-numeric: tabular-nums; }
+#history { margin: 8px 0 0; }
+
+/* cricket */
+.cr-big { font-size: clamp(32px, 11vw, 52px); font-weight: 800; line-height: 1.15; margin: 12px 0 2px; font-variant-numeric: tabular-nums; }
+.cr-overs { font-size: 17px; font-weight: 600; margin: 0; font-variant-numeric: tabular-nums; }
+#crChase { font-weight: bold; margin: 10px 0 0; }
+#crFirst { margin: 6px 0 0; }
+.over { font-size: 22px; letter-spacing: 2px; word-spacing: 6px; margin: 10px 0 0; }
+.free { display: inline-block; background: var(--highlight); color: var(--on-highlight); padding: 4px 10px; font-weight: bold; border-radius: 4px; margin: 10px 0 0; }
+#crExtras { margin: 10px 0 0; }
+
+.result { font-size: 18px; font-weight: bold; color: var(--result); margin: 14px 0 0; }
+
+/* A number that just changed flashes once: pale background and a small grow, fading back in 1.5 s.
+   Only background and transform are animated (cheap for the phone). "Reduce motion": base.css makes it instant. */
+#sA, #sB, #pA, #pB, #crBig { display: inline-block; border-radius: 6px; }
+#crBig { padding: 0 6px; }
+@keyframes bump { from { background-color: var(--flash); transform: scale(1.12); } }
+.bump { animation: bump 1.5s ease-out; }

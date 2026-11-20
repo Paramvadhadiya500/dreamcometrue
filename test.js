@@ -987,10 +987,10 @@ const { createQueue } = require("./public/queue");
   assert.notStrictEqual(cardSignature({ ...m, teamA: "A B", teamB: "" }), cardSignature({ ...m, teamA: "A", teamB: "B" }));
 
   // the classic bug: card() shows a field that is not in the signature -> that card never updates.
-  // Read card() from the page and check every m.<field> it uses (the id is the key, not shown text).
-  const page = require("fs").readFileSync(require("path").join(__dirname, "public", "index.html"), "utf8");
-  const cardSource = page.match(/function card\(m\) \{([\s\S]*?)\n  \}/);
-  assert.ok(cardSource, "card(m) found in index.html");
+  // Read card() from the page's code and check every m.<field> it uses (the id is the key, not shown text).
+  const page = require("fs").readFileSync(require("path").join(__dirname, "public", "js", "home.js"), "utf8").replace(/\r\n/g, "\n");
+  const cardSource = page.match(/\nfunction card\(m\) \{([\s\S]*?)\n\}/);
+  assert.ok(cardSource, "card(m) found in public/js/home.js");
   const used = new Set([...cardSource[1].matchAll(/\bm\.([A-Za-z]+)/g)].map((x) => x[1]));
   used.delete("id");
   assert.ok(used.size >= 8, "card() reads the match fields");
