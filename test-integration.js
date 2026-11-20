@@ -136,7 +136,7 @@ async function viewer(matchId) {
   s.emit("join-match", matchId);
   const state = await first;
   updates.length = 0;                                              // count only what comes after the join
-  return { state, updates };
+  return { state, updates, socket: s };
 }
 
 let idCount = 0;
@@ -398,6 +398,29 @@ test("8. the save itself fails (inner safety net in applyAction): retry:true, no
   assert.deepStrictEqual([later.state.scoreA, later.state.scoreB], [6, 12]);
   assert.strictEqual(await rowsWithId(poison.id), 1);
   assert.strictEqual(server.exitCode, null);
+});
+
+test("9. join-match with a malformed id is ignored: no answer, the viewer keeps its match, a good id still works", async () => {
+  const match = await addMatch("joinbad", ["it_scorer1"]);
+  const other = await addMatch("joinbad2", []);
+  const s1 = await scorer("it_scorer1");
+  const v = await viewer(match);
+
+  // wrong shapes: capitals and symbols, too long (41), a space, empty, and a long junk string
+  for (const bad of ["BAD_ID!", "a".repeat(41), "it bad", "", "x".repeat(5000)]) v.socket.emit("join-match", bad);
+  await sleep(500);
+  assert.deepStrictEqual(v.updates, [], "no answer to a malformed id");
+
+  // still in its own match: the next point reaches this viewer
+  assert.strictEqual((await act(s1, match, point("A", 2))).ok, true);
+  for (let i = 0; i < 30 && v.updates.length === 0; i++) await sleep(100);
+  assert.deepStrictEqual(v.updates.map((u) => [u.matchId, u.scoreA]), [[match, 2]],
+    "the viewer must still get its match after the malformed joins");
+
+  // a well-formed id still switches the match as before
+  const next = new Promise((resolve) => v.socket.once("score:update", resolve));
+  v.socket.emit("join-match", other);
+  assert.strictEqual((await next).matchId, other);
 });
 
 // ---------- run ----------

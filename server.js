@@ -355,11 +355,15 @@ app.get("/api/standings", async (req, res) => {
   }
 });
 
+// What a match id looks like (admin panel: "cr-1a2b3c", add-match.js: lowercase, digits, dashes).
+// Used by /api/match/:id and by the socket "join-match", so both accept exactly the same ids.
+const MATCH_ID_RE = /^[a-z0-9-]{1,40}$/;
+
 // details of one match (names, place, time), cached for 10 seconds
 app.get("/api/match/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    if (!/^[a-z0-9-]{1,40}$/.test(id)) return res.status(404).json({ error: "match not found" });
+    if (!MATCH_ID_RE.test(id)) return res.status(404).json({ error: "match not found" });
     const hit = matchMetaCache.get(id);
     if (hit && Date.now() - hit.at < 10000) return res.json(hit.data);
     const r = await pool.query(
@@ -442,7 +446,8 @@ function allowJoin(socket) {
 
 io.on("connection", (socket) => {
   socket.on("join-match", async (matchId) => {
-    if (typeof matchId !== "string" || !allowJoin(socket)) return;
+    // a malformed id is ignored BEFORE leaving the current match, before Redis and before the database
+    if (typeof matchId !== "string" || !MATCH_ID_RE.test(matchId) || !allowJoin(socket)) return;
     try {
       for (const room of [...socket.rooms]) {
         if (room !== socket.id) socket.leave(room);
