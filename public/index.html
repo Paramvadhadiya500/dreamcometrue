@@ -166,7 +166,14 @@
     }
   }
 
+  // Rebuild the sports dropdown only when the list of sports really changed. Rebuilding it every 10 s
+  // can close or reset the dropdown on a phone while the student is choosing.
+  let shownCompetitions = null;      // the list now in the dropdown, as text (to compare quickly)
+
   function fillCompetitions() {
+    const key = JSON.stringify(home.competitions);
+    if (key === shownCompetitions) return;   // same list as on screen: leave the dropdown alone
+    shownCompetitions = key;
     const sel = $("comp");
     const keep = sel.value;
     sel.innerHTML = "";

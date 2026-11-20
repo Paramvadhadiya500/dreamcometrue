@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-20 - Home page: sports dropdown is rebuilt only when the list of sports changes
+- **What:** `public/index.html` `fillCompetitions()`: remembers the list of sports now in the dropdown (as JSON text) and returns at once when the new list is the same. 7 added lines. Phase 1, step 4 of the student-pages plan.
+- **Why:** before, every poll (every 10 s) emptied and refilled the `<select>`. On some phones that closes or resets the dropdown while the student is choosing, and screen readers lose their place. The list of sports changes only when the admin adds or removes a sport.
+- **Checked:** throwaway Node script (not in the repo) that runs the page's real script with a fake page and fake data: first load builds the dropdown once (All sports + 2); 3 more polls with the same list: not rebuilt and the chosen sport stays; a new sport: rebuilt once, choice kept; the chosen sport removed: rebuilt, back to "All sports". The same script FAILS on the old page (rebuilt on every poll). The step 3 check still passes. `node test.js`: All tests passed. NOT checked: in a real browser and on a phone (open the dropdown and wait 10 s: it must stay open).
+- **Undo:** `git revert <this commit>`, then the normal deploy (`docker compose build`, `docker compose up -d`).
+
 ## 2026-11-20 - Home page: one request at a time (no pile-up, no old reply on top)
 - **What:** `public/index.html` `refresh()`: a `busy` flag. If a request to `/api/home` is still running, a new refresh (10 s timer, coming back to the tab, Points tab) does nothing; the flag is cleared in `finally`, so after a success AND after an error. 8 added lines. Phase 1, step 3 of the student-pages plan.
 - **Why:** on a slow network a reply can take more than 10 s. Before, the timer kept starting new requests: they piled up (DevTools custom profile 15 s latency: 4 `home` requests pending at once, each slower: 15, 25, 30, 35 s) and an OLD reply arriving last put an older score back on the home cards for up to 10 s (score going backwards, a finished match shown as live again, a wrong "Connection problem" note). The match page was not affected (Socket.IO + `version` check). The database is never wrong; only the screen was.
