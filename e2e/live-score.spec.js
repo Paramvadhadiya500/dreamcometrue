@@ -13,7 +13,7 @@ test("a point from the scorer reaches the student's match page within 3 s", asyn
 
   // 1-2. home page, Schedule tab (no point yet = "upcoming", so it is not under Live)
   await page.goto("/");
-  await page.getByRole("button", { name: "Schedule" }).click();
+  await page.getByRole("link", { exact: true, name: "Schedule" }).click();
 
   // 3. open the card of this match (5 s at most: it must be there on the first load)
   await page.getByRole("link", { name: m.teamA + " vs " + m.teamB }).click({ timeout: 5000 });

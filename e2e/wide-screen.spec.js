@@ -15,7 +15,7 @@ test.afterAll(async () => { await pool.end(); });
 // position of the first two cards on the Schedule tab
 async function firstTwoCards(page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Schedule" }).click();
+  await page.getByRole("link", { exact: true, name: "Schedule" }).click();
   await expect(page.locator("#list")).toContainText(last.teamA);
   const cards = page.locator("a.card");
   return [await cards.nth(0).boundingBox(), await cards.nth(1).boundingBox()];

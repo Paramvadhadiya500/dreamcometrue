@@ -68,11 +68,11 @@ test("switching tabs or sport reuses cards and does not flash", async ({ page })
     match("m3", "finished", "Red m3 2 - 1 Blue m3", { competition: "Kabaddi", resultText: "Red m3 won" })], competitions: ["Football", "Kabaddi"] } };
   await open(page, data);
   await mark(page, "m1");
-  await page.getByRole("button", { name: "Schedule" }).click();
-  await page.getByRole("button", { name: "Live" }).click();
+  await page.getByRole("link", { exact: true, name: "Schedule" }).click();
+  await page.getByRole("link", { exact: true, name: "Live" }).click();
   expect(await marked(page, "m1"), "back on Live: the same element").toBe(true);
   await page.getByRole("combobox", { name: "Sport" }).selectOption("Kabaddi");
-  await page.getByRole("button", { name: "Results" }).click();
+  await page.getByRole("link", { exact: true, name: "Results" }).click();
   await expect(card(page, "m3")).toBeVisible();
   await expect(page.locator("a.card.changed")).toHaveCount(0);
 });

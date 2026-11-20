@@ -4,12 +4,12 @@ const { test, expect } = require("@playwright/test");
 test("keyboard focus shows a clear ring; a mouse click shows none", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab");                                   // first stop: the Live tab
-  const live = page.getByRole("button", { name: "Live" });
+  const live = page.getByRole("link", { exact: true, name: "Live" });
   await expect(live).toBeFocused();
   await expect(live).toHaveCSS("outline-style", "solid");
   await expect(live).toHaveCSS("outline-width", "3px");
 
-  const schedule = page.getByRole("button", { name: "Schedule" });
+  const schedule = page.getByRole("link", { exact: true, name: "Schedule" });
   await schedule.click();                                             // mouse: :focus-visible is false
   await expect(schedule).toBeFocused();
   await expect(schedule).toHaveCSS("outline-style", "none");

@@ -26,7 +26,7 @@ test("home page fits a 360 px phone on every tab", async ({ page }) => {
   await expect(page.locator("#list")).toContainText(m.teamA);   // real content, not "Loading..."
   expect(await layoutWidth(page), "home page laid out for a 360 px phone").toBe(360);
   for (const tab of ["Live", "Schedule", "Results", "Points"]) {
-    await page.getByRole("button", { name: tab }).click();
+    await page.getByRole("link", { exact: true, name: tab }).click();
     await expect(page.locator("#list")).not.toContainText("Loading");
     expect(await overflow(page), "sideways scroll on the " + tab + " tab").toBe(0);
   }

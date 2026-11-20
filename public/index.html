@@ -15,8 +15,11 @@
   header { background: var(--brand); color: var(--on-brand); padding: 14px 16px; }
   header h1 { margin: 0; font-size: 22px; }
   .tabs { display: flex; gap: 6px; padding: 10px 12px; background: var(--surface); position: sticky; top: 0; border-bottom: 1px solid var(--border); z-index: 1; }
-  .tabs button { flex: 1; font-size: 15px; padding: 10px 2px; border: 1px solid var(--control-border); background: var(--surface); border-radius: 6px; }
-  .tabs button.on { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+  /* The tabs are links (#live, #schedule, ...). The chosen one has aria-current="page": styling by that
+     attribute means the look and what a screen reader hears can never disagree. */
+  .tabs a { flex: 1; font-size: 15px; padding: 10px 2px; border: 1px solid var(--control-border); background: var(--surface);
+            border-radius: 6px; color: var(--text); text-align: center; text-decoration: none; }
+  .tabs a[aria-current="page"] { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
   .bar { padding: 10px 12px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   select { font-size: 16px; padding: 6px; max-width: 100%; }
   .updated { color: var(--text-muted); font-size: 14px; text-align: right; }
@@ -68,12 +71,12 @@
 <body>
 <header><h1>Sports Live</h1></header>
 
-<div class="tabs">
-  <button data-tab="live" onclick="setTab('live')">Live</button>
-  <button data-tab="schedule" onclick="setTab('schedule')">Schedule</button>
-  <button data-tab="results" onclick="setTab('results')">Results</button>
-  <button data-tab="points" onclick="setTab('points')">Points</button>
-</div>
+<nav class="tabs" aria-label="Sections">
+  <a href="#live" data-tab="live">Live</a>
+  <a href="#schedule" data-tab="schedule">Schedule</a>
+  <a href="#results" data-tab="results">Results</a>
+  <a href="#points" data-tab="points">Points</a>
+</nav>
 
 <div class="bar">
   <label for="comp" class="sr-only">Sport</label>
@@ -86,7 +89,10 @@
 <script src="/js/home-logic.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
-  let tab = "live";
+  // The chosen tab lives in the address (#live, #schedule, #results, #points): Back/Forward and shared links work.
+  const TABS = ["live", "schedule", "results", "points"];
+  const tabFromAddress = () => { const t = location.hash.slice(1); return TABS.includes(t) ? t : "live"; };
+  let tab = tabFromAddress();
   let home = { matches: [], competitions: [] };
   let standings = { competitions: [], points: null };
   let standingsLoaded = false;   // true once the points table has arrived (it is only fetched on the Points tab)
@@ -212,7 +218,10 @@
   }
 
   function render() {
-    document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+    document.querySelectorAll(".tabs a").forEach((a) => {
+      if (a.dataset.tab === tab) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
     next = new Map();
     const nodes = [];
     const message = (text) => nodes.push(keep("msg:" + text, text, () => el("p", text, "empty")));
@@ -355,11 +364,14 @@
   }
   setInterval(() => { if (document.visibilityState !== "hidden") showUpdated(); }, 5000);
 
-  function setTab(t) {
+  // A tab link changes the address; so do Back and Forward. Either way the browser says "hashchange".
+  window.addEventListener("hashchange", () => {
+    const t = tabFromAddress();
+    if (t === tab) return;
     tab = t;
     render();
     if (t === "points") refresh();
-  }
+  });
 
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
   window.addEventListener("online", () => refresh());   // the phone's network is back: do not wait up to 60 s
