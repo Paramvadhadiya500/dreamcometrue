@@ -997,6 +997,56 @@ const { createQueue } = require("./public/queue");
   for (const f of used) assert.ok(CARD_FIELDS.includes(f), "card() shows m." + f + " but it is not in CARD_FIELDS");
 }
 
+// ---------- match page: screen-reader sentence and its throttle (public/js/match-logic.js) ----------
+{
+  const { scoreSentence, createAnnouncer } = require("./public/js/match-logic");
+  const { effectivePoints: eff } = require("./engine");
+  const st = (sport, list, extra = {}) => {
+    const rows = list.map((e, i) => ({ seq: String(i + 1), type: e.type, team: e.team || null, value: e.value === undefined ? null : e.value, data: e.data || null }));
+    return { sport, teamA: "CSE", teamB: "ECE", ...getEngine(sport).compute(eff(rows), { config: extra.config || {}, best_of: 3 }) };
+  };
+  const p = (team, value) => ({ type: "point", team, value });
+  const bl = (runs, extra = null, kind = null) => ({ type: "ball", data: { runs, extra, wicket: kind ? { kind } : null } });
+
+  assert.strictEqual(scoreSentence(st("simple", [p("A", 3), p("B", 1)])), "CSE 3, ECE 1.");
+  assert.strictEqual(scoreSentence(st("simple", [p("A", 2), p("B", 1), { type: "finish" }])), "Match finished. CSE won. CSE 2, ECE 1.");
+  assert.strictEqual(scoreSentence(st("simple", [p("A", 1), p("B", 1), { type: "finish" }])), "Match finished. Draw. CSE 1, ECE 1.");
+  assert.strictEqual(scoreSentence({ ...st("simple", [p("A", 1)]), teamA: "", teamB: "" }), "Team A 1, Team B 0.");
+  const tt = st("table_tennis", [...Array(11)].map(() => p("A")).concat([p("B"), p("B"), p("A")]));
+  assert.strictEqual(scoreSentence(tt), "Games: CSE 1, ECE 0. Current game: 1 to 2.");
+  const vb = st("volleyball", [...Array(25)].map(() => p("A")).concat([p("B")]), { config: { bestOf: 3 } });
+  assert.strictEqual(scoreSentence(vb), "Sets: CSE 1, ECE 0. Set 2: 0 to 1.");
+  const crCfg = { config: { overs: 2, players: 4, firstBatting: "A", freeHit: true } };
+  assert.strictEqual(scoreSentence(st("cricket", [bl(4), bl(1)], crCfg)), "CSE 5 for 0 after 0.2 overs.");
+  const chase = st("cricket", [...[4, 1, 0, 6, 2, 1, 0, 4, 1, 1, 0, 2].map((r) => bl(r)), bl(1), bl(0, null, "bowled"), bl(1, "noball")], crCfg);
+  assert.strictEqual(scoreSentence(chase), "ECE 3 for 1 after 0.2 overs. Need 20 from 10 balls. Free hit.");
+
+  // the throttle, with a fake clock: at most one sentence per 8 s, the newest wins
+  let clock = 0, timers = [];
+  const said = [];
+  const announce = createAnnouncer({ minGapMs: 8000, now: () => clock, say: (t) => said.push(clock + ": " + t),
+    setTimer: (fn, ms) => { timers.push({ fn, at: clock + ms }); return timers.length; } });
+  const runTo = (t) => { clock = t; for (const x of timers.splice(0).filter((y) => y.at <= t)) x.fn(); };
+  announce("one");                                   // first: at once
+  assert.deepStrictEqual(said, ["0: one"]);
+  clock = 1000; announce("two");
+  clock = 3000; announce("three");                   // two and three wait; three is newer
+  assert.deepStrictEqual(said, ["0: one"], "nothing more within 8 s");
+  runTo(8000);
+  assert.deepStrictEqual(said, ["0: one", "8000: three"], "after the gap only the newest");
+  runTo(20000); announce("four");                    // a quiet time: at once again
+  assert.deepStrictEqual(said.slice(-1), ["20000: four"]);
+  announce("four"); clock = 30000; announce("four");  // the same sentence is never said twice in a row
+  assert.strictEqual(said.length, 3);
+  clock = 30001; announce("five");                   // and a skipped repeat did not start a new 8 s gap
+  assert.deepStrictEqual(said.slice(-1), ["30001: five"]);
+  clock = 31000; announce("six"); clock = 32000; announce("five");   // changed and changed back within the gap
+  runTo(38001);
+  assert.strictEqual(said.length, 4, "back to what was said last: nothing to say");
+  clock = 38500; announce("seven");                  // that silent moment must not start a new 8 s wait
+  assert.deepStrictEqual(said.slice(-1), ["38500: seven"], "said at once (last real sentence was 8.5 s ago)");
+}
+
 // ---------- student home page: "Updated ... ago" ----------
 {
   const { agoText } = require("./public/js/home-logic");

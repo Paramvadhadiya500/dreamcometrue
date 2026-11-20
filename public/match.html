@@ -59,6 +59,9 @@
 </head>
 <body>
 <div id="conn">Reconnecting... the score below may be out of date</div>
+<!-- Screen readers only: a short sentence when the score changes (at most one per 8 s). It must exist,
+     empty, from the start: a live region added together with its text is often not read out. -->
+<div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 <div class="page">
 <a class="back" href="/">&larr; All matches</a>
 
@@ -95,6 +98,7 @@
 </div>
 
 <script src="/socket.io/socket.io.min.js"></script>
+<script src="/js/match-logic.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   const matchId = new URLSearchParams(location.search).get("id");
@@ -144,6 +148,17 @@
     $(id).addEventListener("animationend", endFlash);
     $(id).addEventListener("animationcancel", endFlash);
   }
+
+  // Screen readers: "CSE 3, ECE 1." when the score changes, at most one sentence per 8 s, the newest wins
+  // (MatchLogic in public/js/match-logic.js, tested in test.js). Nothing for the first score after opening
+  // (the page itself is read then) and nothing when the score did not change (e.g. resent after a reconnect).
+  const announce = MatchLogic.createAnnouncer({
+    minGapMs: 8000,
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    say: (text) => { $("announcer").textContent = text; },
+  });
+  let lastSentence = null;
 
   // "CSE won", "Draw", or the engine's own text (cricket: "CSE won by 5 runs")
   function resultText(s) {
@@ -204,6 +219,9 @@
     } else {
       showDuel(s, isTT, isVB);
     }
+    const sentence = MatchLogic.scoreSentence(s);
+    if (!firstScore && sentence !== lastSentence) announce(sentence);
+    lastSentence = sentence;
     firstScore = false;
   });
 
