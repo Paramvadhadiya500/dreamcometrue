@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const { createServer } = require("http");
 const { Server } = require("socket.io");
 const { createClient } = require("redis");
@@ -35,7 +36,36 @@ app.disable("x-powered-by");
 const proxyHops = Number.parseInt(process.env.TRUST_PROXY || "0", 10);
 if (proxyHops > 0) app.set("trust proxy", proxyHops);
 app.use(express.json({ limit: "20kb" }));
-app.use(express.static("public"));
+
+// Browser features no page of this site uses: switched off for every answer, so an injected script cannot ask for them.
+app.use((req, res, next) => {
+  res.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  next();
+});
+
+// Content-Security-Policy for the STUDENT pages (index.html, match.html): the browser runs only script and style
+// FILES from this site (no inline code, nothing from other sites), images from this site or data: (the tab icon),
+// connects only to this site (API and the Socket.IO WebSocket), and never shows the page inside another site.
+// A script injected into the page (e.g. through a team name) would not run. The scorer and admin pages still
+// use inline code, so they do not get it yet. Set here and not in the Caddyfile, so the tests (real server.js,
+// no Caddy) check it. Tested in e2e/csp.spec.js.
+const STUDENT_PAGES = new Set(["index.html", "match.html"].map((f) => path.join(__dirname, "public", f)));
+const STUDENT_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join("; ");
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders(res, filePath) {
+    if (STUDENT_PAGES.has(filePath)) res.set("Content-Security-Policy", STUDENT_CSP);
+  },
+}));
 const httpServer = createServer(app);
 const io = new Server(httpServer, { maxHttpBufferSize: 10000 });   // no message from a phone needs more than 10 KB
 
