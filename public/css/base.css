@@ -17,7 +17,8 @@
   --heading-muted: #345;     /* day headings in the schedule */
 
   /* brand */
-  --brand: #1f3a5f;          /* navy BACKGROUND: header, active tab */
+  --brand: #1f3a5f;          /* navy BACKGROUND: header, active tab. ALSO in <meta name="theme-color"> and the
+                                icon of index.html and match.html (they cannot use var()): change those too */
   --on-brand: #fff;          /* text on navy */
   --link: #1f3a5f;           /* link TEXT (match page back link); same navy in light, lighter in dark */
 

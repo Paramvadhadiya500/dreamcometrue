@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sports Live</title>
+<!-- Tab icon, written into the page (no extra download; without it browsers ask for /favicon.ico and get 404). -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f3a5f'/%3E%3Ccircle cx='15' cy='17' r='8' fill='none' stroke='%23fff' stroke-width='3'/%3E%3Ccircle cx='25' cy='7' r='4.5' fill='%23d22'/%3E%3C/svg%3E">
+<!-- Color of the phone's browser bar. Same values as --brand in base.css (a meta tag cannot use CSS variables). -->
+<meta name="theme-color" content="#1f3a5f" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#3a6fb3" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="/css/base.css">
 <style>
   body { background: var(--bg); color: var(--text); }
@@ -31,6 +36,14 @@
   th { background: var(--table-head); font-size: 13px; }
   .note { color: var(--note); font-size: 14px; padding: 6px 12px; min-height: 18px; }
   .empty { color: var(--text-muted); padding: 12px 2px; }
+
+  /* Mobile first: everything above is the phone layout (1 column).
+     From 640 px wide (tablet, laptop) the match cards sit in 2 columns; headings, tables and messages
+     still use the full width. Grid margins do not collapse, so 10 px + 10 px = 20 px between rows: 20 px columns match. */
+  @media (min-width: 640px) {
+    main { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; }
+    main > :not(a.card) { grid-column: 1 / -1; }
+  }
 </style>
 </head>
 <body>

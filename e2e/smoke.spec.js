@@ -17,4 +17,11 @@ for (const url of ["/", "/match.html?id=no-such-match"]) {
     const brand = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand"));
     expect(brand.trim(), "the --brand token from base.css").not.toBe("");
   });
+
+  // without an icon in the page, browsers ask for /favicon.ico on every visit and get 404
+  test("tab icon and browser-bar color are set on " + url, async ({ page }) => {
+    await page.goto(url);
+    await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", /^data:image\/svg\+xml,/);
+    await expect(page.locator('meta[name="theme-color"]')).toHaveCount(2);   // light and dark
+  });
 }
