@@ -53,12 +53,24 @@
 
   const socket = io();
   let latest = 0;                          // newest version seen for this match
+  let gotScore = false;                    // has any score arrived since the page opened?
 
   const teamName = (s, t) => (t === "A" ? s.teamA : s.teamB) || "Team " + t;
 
+  // the red bar at the top: empty text hides it
+  function showConn(text) {
+    $("conn").textContent = text;
+    $("conn").style.display = text ? "block" : "none";
+  }
+
   function join() { if (matchId) socket.emit("join-match", matchId); }
-  socket.on("connect", () => { $("conn").style.display = "none"; join(); });
-  socket.on("disconnect", () => { $("conn").style.display = "block"; });
+  socket.on("connect", () => { showConn(""); join(); });
+  socket.on("disconnect", () => { showConn("Reconnecting... the score below may be out of date"); });
+  // The server cannot be reached. This also happens when the page OPENS while the server is down:
+  // without this the page said "Loading..." forever. Socket.IO keeps trying again by itself.
+  socket.on("connect_error", () => {
+    showConn(gotScore ? "Reconnecting... the score below may be out of date" : "Cannot reach the server. Trying again...");
+  });
 
   function statusText(s) {
     if (s.status !== "finished") return "LIVE";
@@ -95,6 +107,7 @@
     if (s.matchId !== matchId) return;
     if (s.version < latest) return;        // old news, ignore
     latest = s.version;
+    gotScore = true;
 
     $("name").textContent = s.name;
     document.title = s.name;
