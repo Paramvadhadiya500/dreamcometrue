@@ -423,6 +423,46 @@ test("9. join-match with a malformed id is ignored: no answer, the viewer keeps 
   assert.strictEqual((await next).matchId, other);
 });
 
+test("10. SIGTERM (what Docker sends on stop/restart): the server closes cleanly and exits 0 within 3 s", async () => {
+  if (process.platform === "win32") {
+    console.log("     (skipped on Windows: it has no SIGTERM; GitHub and the Linux container run this case)");
+    return;
+  }
+  // its own server.js, so stopping it does not touch the one the other cases use
+  const port = await freePort();
+  const log = [];
+  const p = spawn(process.execPath, ["server.js"], {
+    cwd: __dirname,
+    env: { ...process.env, NODE_ENV: "test", PORT: String(port), DATABASE_URL: DB_URL, REDIS_URL, JWT_SECRET, TRUST_PROXY: "" },
+  });
+  p.stdout.on("data", (d) => log.push(String(d)));
+  p.stderr.on("data", (d) => log.push(String(d)));
+  const exited = new Promise((resolve) => p.once("exit", (code, signal) => resolve({ code, signal })));
+  for (let i = 0; i < 150 && !log.join("").includes("http://localhost:" + port); i++) await sleep(100);
+  assert.ok(log.join("").includes("http://localhost:" + port), "second server started:\n" + log.join(""));
+
+  // a student is watching (an open WebSocket) when the stop comes
+  const viewerSocket = io("http://127.0.0.1:" + port, { transports: ["websocket"], reconnection: false, forceNew: true });
+  sockets.push(viewerSocket);
+  await new Promise((resolve, reject) => { viewerSocket.once("connect", resolve); viewerSocket.once("connect_error", reject); });
+  const told = new Promise((resolve) => viewerSocket.once("disconnect", resolve));
+
+  const t0 = Date.now();
+  p.kill("SIGTERM");
+  const end = await Promise.race([exited, sleep(9000).then(() => ({ code: "still running after 9 s" }))]);
+  const ms = Date.now() - t0;
+  if (p.exitCode === null && p.signalCode === null) p.kill("SIGKILL");
+
+  assert.deepStrictEqual(end, { code: 0, signal: null },
+    "must exit by itself with code 0, not be killed by the signal; got " + JSON.stringify(end) + "\n" + log.join(""));
+  assert.ok(ms < 3000, "clean stop must take under 3 s, took " + ms + " ms");
+  await Promise.race([told, sleep(1000)]);
+  assert.strictEqual(viewerSocket.connected, false, "the watching phone was disconnected (it reconnects to the new app by itself)");
+  const text = log.join("");
+  assert.ok(text.includes("shutdown: SIGTERM received"), "log says why it stops:\n" + text);
+  assert.ok(text.includes("shutdown: done"), "log says it finished cleanly:\n" + text);
+});
+
 // ---------- run ----------
 async function main() {
   const watchdog = setTimeout(() => { console.error("FAIL: integration tests took over 3 minutes"); finish(1); }, 180000);

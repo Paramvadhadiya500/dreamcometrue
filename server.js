@@ -530,3 +530,31 @@ async function main() {
   httpServer.listen(PORT, () => console.log("http://localhost:" + PORT));
 }
 main().catch((e) => { console.error("startup failed:", e.message); process.exit(1); });
+
+// ---------- clean shutdown ----------
+// Docker stops the app with SIGTERM (Ctrl+C on the laptop sends SIGINT). In the container Node is process 1,
+// and process 1 IGNORES SIGTERM unless the program handles it: so before this, every restart/deploy waited
+// 10 s and then Docker KILLED the app, possibly in the middle of saving a score.
+// Order: stop taking new connections and close the open ones (phones reconnect to the new app by themselves;
+// a scorer phone resends an unanswered tap with the same id, so nothing counts twice), let running work end,
+// close the database pool (it waits for running queries) and Redis, exit 0. Never more than 8 s (Docker kills at 10).
+// Tested in test-integration.js (case 10).
+let stopping = false;
+async function shutdown(signal) {
+  if (stopping) return;                    // a second signal while stopping: already on it
+  stopping = true;
+  console.log("shutdown: " + signal + " received, closing connections");
+  setTimeout(() => { console.error("shutdown: still busy after 8 s, exiting anyway"); process.exit(1); }, 8000).unref();
+  try {
+    await io.close();                      // all sockets, then the HTTP server (running requests may finish)
+    await pool.end();                      // waits for database work still running, then closes
+    await Promise.allSettled([cache.close(), pubClient.close(), subClient.close()]);
+    console.log("shutdown: done");
+    process.exit(0);
+  } catch (e) {
+    console.error("shutdown failed:", e.message);
+    process.exit(1);
+  }
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
