@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Phase 6 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `7fcc548`..`dea0186` (3 changelog notes and the 2 Phase 6 commits: CSS/JS into files, CSP + Permissions-Policy). NOT deployed yet (the server runs Phase 5).
+- **Checked:** GitHub run for `dea0186`: success; `unit`, `image`, `integration` (changed `server.js`) and `e2e` (51 browser tests) all green.
+- **Next (by hand, when the user decides):** normal deploy: backup, `git pull`, `docker compose build`, `docker compose up -d`. No database change, no Redis flush, NO Caddy restart (the CSP is set by `server.js`). Then `./scripts/security-check.sh` must show the new line "the home page has a Content-Security-Policy" (28 checks), and on a real phone home and match page must work as before (a page whose code is blocked would stay empty).
+- **Undo:** see the entries below.
+
 ## 2026-11-21 - Student pages get a Content-Security-Policy; Permissions-Policy for every answer
 - **What:** `server.js`: (1) `express.static` sets a `Content-Security-Policy` on `index.html` and `match.html` only: `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'` (no `unsafe-inline`). Scorer and admin pages do not get it yet (they still have inline code). (2) Every answer gets `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`. (3) The static folder is now an absolute path (`path.join(__dirname, "public")`; same folder as before, no longer depends on the folder the server is started from). Set in `server.js` and NOT in the `Caddyfile` (the plan said Caddy): the tests run the real `server.js` without Caddy, so this way every test run checks the header; and the deploy needs no Caddy restart. `scripts/security-check.sh`: new check that the home page has a CSP with `script-src 'self'` (through Caddy, on the live site). New `e2e/csp.spec.js` (6 tests). `e2e/smoke.spec.js`: now needs real content in the list. Phase 6, step 2 (by Claude without questions, at the user's request).
 - **Why:** if HTML ever got into a page (e.g. through a team name), an injected script would run with the page's rights. With this CSP the browser refuses inline and foreign code.
