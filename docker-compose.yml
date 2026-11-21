@@ -1,7 +1,18 @@
+# Log size limit, used by every service below ("*logging"). Docker keeps each container's output in a file that
+# otherwise grows without end (the server disk is 20 GiB; a full disk stops Postgres from saving anything).
+# Each container: at most 3 files of 10 MB (about 30 MB); the oldest is deleted. Applies when a container is
+# created again (`docker compose up -d` does that for every service whose settings changed).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   app:
     build: .
     restart: unless-stopped
+    logging: *logging
     env_file: .env
     environment:
       PORT: 3000
@@ -17,6 +28,7 @@ services:
   db:
     image: postgres:16
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: livescore
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -35,6 +47,7 @@ services:
   redis:
     image: redis:7
     restart: unless-stopped
+    logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
       interval: 5s
@@ -45,6 +58,7 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *logging
     ports:
       - "80:80"
       - "443:443"
@@ -53,6 +67,7 @@ services:
       ACME_PROFILE: "${ACME_PROFILE:-classic}"    # use "shortlived" when DOMAIN is an IP address
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./public-errors:/srv/errors:ro            # the "back in a moment" page (Caddyfile, handle_errors)
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

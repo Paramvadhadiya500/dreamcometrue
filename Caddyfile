@@ -23,4 +23,17 @@
 	}
 
 	reverse_proxy app:3000
+
+	# The app does not answer (502 bad gateway, 503, 504: a restart, a crash, a deploy): instead of an empty error,
+	# show a small friendly page. It is a file Caddy serves by itself (public-errors/down.html, mounted read-only
+	# in docker-compose.yml), refreshes itself every 20 s, and must never be kept in a cache.
+	handle_errors {
+		@down expression `{err.status_code} >= 502 && {err.status_code} <= 504`
+		handle @down {
+			root * /srv/errors
+			rewrite * /down.html
+			header Cache-Control "no-store"
+			file_server
+		}
+	}
 }
