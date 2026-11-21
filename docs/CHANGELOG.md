@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Phase 7 pushed; all 4 CI jobs green on GitHub
+- **What:** `git push` of `8c55e12`..`a511dfa` (2 changelog notes and the 2 Phase 7 commits: clean shutdown, down page + log limits). NOT deployed yet (the server runs Phase 6).
+- **Checked:** GitHub run for `a511dfa`: success; `unit`, `image`, `integration` (on Linux, so case 10, the SIGTERM shutdown, really runs there) and `e2e` (51 browser tests) all green.
+- **Next (by hand, when the user decides, at a quiet time):** see the deploy notes in the entry below (all 4 containers are re-created).
+- **Undo:** see the entries below.
+
 ## 2026-11-21 - "Back in a moment" page when the app is down; log size limits for every container
 - **What:** (1) new `public-errors/down.html` (one file, no script, light and dark, refreshes itself every 20 s; tells scorers to keep their open scorer page and not reload it, their taps wait on the phone). `Caddyfile`: `handle_errors` for 502, 503 and 504 serves that file (`Cache-Control: no-store`); the status stays 502 (so UptimeRobot still sees the outage). `docker-compose.yml`: `./public-errors` mounted read-only into Caddy at `/srv/errors`. (2) `docker-compose.yml`: one shared `x-logging` setting (`json-file`, at most 3 files of 10 MB per container, oldest deleted) used by app, db, redis and caddy. Phase 7, steps 2 and 3 (one commit: both change `docker-compose.yml` and are deployed together; by Claude without questions, at the user's request).
 - **Why:** (1) during a deploy, restart or crash students got an empty "502" page that looks broken. (2) Docker's log files grew without limit on a 20 GiB disk; a full disk stops Postgres from saving anything.
