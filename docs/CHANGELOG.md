@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Deployed Phase 6 of the student-pages plan on the server (by hand); checks done
+- **What:** normal deploy of `dea0186` (CSS/JS into files, Content-Security-Policy and Permissions-Policy from `server.js`) by the user: backup, `git pull`, `docker compose build`, `docker compose up -d`. No database change, no Redis flush, no Caddy restart.
+- **Checked (reported by the user):** `/ready` -> `{"ok":true,"failed":[]}`; `./scripts/security-check.sh`: 28 passed, 0 warnings, 0 failed (one more than before: the new check "the home page has a Content-Security-Policy", so the header reaches browsers through Caddy); on a real phone the home page and the match page work as before (no page left empty by blocked code).
+- **NOT checked / not reported:** the exact `git pull` / `build` / `up -d` output (not pasted, so the commit range on the server is assumed to be `2992304..dea0186`), Firefox and Safari on a computer, a real screen reader.
+- **Undo:** server (Ubuntu bash, `~/dreamcometrue`): `git checkout 2992304` (Phase 5 code), `docker compose build`, `docker compose up -d` (no database change to undo). Then fix properly on the laptop with `git revert`.
+
 ## 2026-11-21 - Phase 6 pushed; all 4 CI jobs green on GitHub
 - **What:** `git push` of `7fcc548`..`dea0186` (3 changelog notes and the 2 Phase 6 commits: CSS/JS into files, CSP + Permissions-Policy). NOT deployed yet (the server runs Phase 5).
 - **Checked:** GitHub run for `dea0186`: success; `unit`, `image`, `integration` (changed `server.js`) and `e2e` (51 browser tests) all green.
