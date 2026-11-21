@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-21 - Deployed Phase 7 on the server (by hand); all 7 phases of the student-pages plan are live
+- **What:** deploy of `a511dfa` (clean shutdown, "Back in a moment" page, log limits) by the user, following the steps in the entry below the push entry: backup, `git pull`, Caddyfile check, `docker compose build`, `docker compose up -d` (all 4 containers re-created because their logging settings changed; Caddy re-created with the new `Caddyfile`).
+- **Checked:** before the switch, the new `Caddyfile` with the server's own `caddy:2` image (`caddy validate`): `Valid configuration` (output pasted; its "no automatic HTTPS" warning only comes from the check using `DOMAIN=:80`). After the deploy, reported by the user as all good: `docker compose ps`, `/ready`, `security-check.sh`, the log limits on the containers, and the site working. That output was NOT pasted, so the exact results (e.g. 28 passed, the `docker inspect` line, whether the optional step 5 with the down page and the 1 s restart was done) are not recorded here.
+- **NOT checked:** log rotation itself (needs 10 MB of logs in one container).
+- **Undo:** server (Ubuntu bash, `~/dreamcometrue`): `git checkout dea0186` (Phase 6 code, old `Caddyfile` and compose file), `docker compose build`, `docker compose up -d` (re-creates the containers with the old settings; no database change). Then fix properly on the laptop with `git revert`.
+
 ## 2026-11-21 - Phase 7 pushed; all 4 CI jobs green on GitHub
 - **What:** `git push` of `8c55e12`..`a511dfa` (2 changelog notes and the 2 Phase 7 commits: clean shutdown, down page + log limits). NOT deployed yet (the server runs Phase 6).
 - **Checked:** GitHub run for `a511dfa`: success; `unit`, `image`, `integration` (on Linux, so case 10, the SIGTERM shutdown, really runs there) and `e2e` (51 browser tests) all green.
