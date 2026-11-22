@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-22 - Phase 8 steps 1-3 (admin page tests, code moved out, CSP) pushed; all 4 CI jobs green
+- **What:** `git push` of `1e559d1`..`dcd447e` (admin E2E tests, inline code moved into `public/css/admin.css` + `public/js/admin.js`, CSP on `admin.html`). NOT deployed yet (the server runs Phase 7).
+- **Checked:** GitHub Actions run for `dcd447e`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API; the e2e test count was not read from the log).
+- **Next (by hand, when the user decides, at a quiet time):** see the deploy notes in the step 3 entry below (app container only).
+- **Undo:** see the entries below.
+
 ## 2026-11-22 - Content-Security-Policy on the admin page (Phase 8 item 4, step 3)
 - **What:** `server.js`: `admin.html` gets the same CSP as the student pages (set renamed `STUDENT_PAGES` -> `CSP_PAGES`, string `STUDENT_CSP` -> `PAGE_CSP`; the policy itself is unchanged). `e2e/csp.spec.js`: admin.html added to the header test and the "injected inline script does not run" test; new test "the whole admin flow" (login, every sport in the form, create a match with a scorer, a point, reload, history open/refresh/close, locked edit, delete with confirm + prompt, create a scorer, log out) with zero CSP violations on every page load; the "not changed" test now checks only `scorer.html`. `scripts/security-check.sh`: also checks `/admin.html` has a CSP (28 checks -> 29). By Claude without questions, at the user's request.
 - **Why:** the admin token is in `localStorage`; a script injected into the admin page could steal it and act as the admin. Today nothing injects one (all text goes in with `textContent`), so this is a second lock, not a bug fix.
