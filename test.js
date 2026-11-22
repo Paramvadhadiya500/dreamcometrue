@@ -1067,6 +1067,23 @@ const { createQueue } = require("./public/queue");
   for (const [ms, text] of cases) assert.strictEqual(agoText(ms), text, ms + " ms");
 }
 
+// ---------- admin page: no inline code (Phase 8; a CSP would block it) ----------
+{
+  const fs = require("fs");
+  const path = require("path");
+  const html = fs.readFileSync(path.join(__dirname, "public", "admin.html"), "utf8");
+  assert.ok(!/<style/i.test(html), "admin.html: no <style> block (use public/css/admin.css)");
+  assert.ok(!/<script(?![^>]*\bsrc=)[^>]*>/i.test(html), "admin.html: every <script> loads a file (src=), no inline script");
+  assert.ok(!/\son[a-z]+\s*=/i.test(html), "admin.html: no onclick=/onchange=... attributes (use addEventListener)");
+  assert.ok(!/\sstyle\s*=/i.test(html), "admin.html: no style=\"...\" attributes (use a CSS rule)");
+  assert.ok(!/javascript:/i.test(html), "admin.html: no javascript: links");
+  // every element admin.js attaches a listener to must exist, or the whole script stops at that line
+  const js = fs.readFileSync(path.join(__dirname, "public", "js", "admin.js"), "utf8");
+  const wired = [...js.matchAll(/\$\("([A-Za-z]+)"\)\.addEventListener/g)].map((x) => x[1]);
+  assert.strictEqual(wired.length, 11, "the 11 buttons/selects that had on...= attributes");
+  for (const id of wired) assert.ok(html.includes('id="' + id + '"'), "admin.html has id=\"" + id + "\" (used in admin.js)");
+}
+
 // ======================= async tests (the summary line waits for them) =======================
 (async () => {
   // ---------- /ready: are the database and Redis answering? ----------

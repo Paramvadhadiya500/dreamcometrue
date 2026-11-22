@@ -1,0 +1,39 @@
+/* Admin page styles (was the inline <style> in admin.html; moved out so a CSP can forbid inline styles). */
+body { font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #111; }
+header { background: #1f3a5f; color: #fff; padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+header h1 { margin: 0; font-size: 20px; flex: 1; }
+header a { color: #cde; }
+.tabs { display: flex; gap: 6px; padding: 10px 12px; background: #fff; border-bottom: 1px solid #ddd; }
+.tabs button { font-size: 16px; padding: 10px 18px; border: 1px solid #ccd; background: #fff; border-radius: 6px; }
+.tabs button.on { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+main { padding: 12px; max-width: 900px; margin: 0 auto; }
+button { font-size: 15px; padding: 8px 12px; border-radius: 6px; border: 1px solid #aab; background: #fff; cursor: pointer; }
+button.primary { background: #1f3a5f; color: #fff; border-color: #1f3a5f; }
+button.danger { color: #a00; border-color: #c88; }
+input, select { font-size: 16px; padding: 7px; max-width: 100%; box-sizing: border-box; }
+label { display: block; margin-top: 10px; font-weight: bold; font-size: 14px; }
+.box { background: #fff; border-radius: 8px; padding: 12px 14px; margin: 12px 0; box-shadow: 0 1px 2px #0002; }
+.row { background: #fff; border-radius: 8px; padding: 10px 12px; margin: 10px 0; box-shadow: 0 1px 2px #0002; }
+.row .title { font-weight: bold; font-size: 17px; }
+.small { color: #555; font-size: 14px; }
+.warn { color: #a40; }
+.err { color: #c22; margin-top: 8px; min-height: 18px; }
+.good { background: #e6f7ec; border: 1px solid #2a7; padding: 10px; border-radius: 6px; margin: 10px 0; font-size: 17px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cols > div > input, .cols > div > select { width: 100%; }
+input.wide, select.wide { width: 100%; }
+.checks label { display: inline-block; font-weight: normal; margin: 6px 14px 0 0; }
+.checks input { width: auto; }
+.actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+#loginBox { max-width: 340px; margin: 40px auto; }
+.hrow { border-top: 1px solid #e3e6ea; padding: 8px 0; }
+.hrow .what { font-size: 16px; font-weight: bold; margin: 2px 0; }
+.hrow.undone .what { text-decoration: line-through; color: #888; font-weight: normal; }
+.hrow.undo .what { color: #a40; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 6px; border-radius: 4px; background: #fde8d8; color: #a40; margin-left: 6px; text-decoration: none; }
+
+/* These were style="..." attributes in admin.html (a CSP blocks those too).
+   Hidden at start; admin.js shows them with el.style.display = "block", which still wins over this rule. */
+#loginBox, #app, #formBox, #lockNote, #ttGroup, #vbGroup, #historyBox, #scorersTab { display: none; }
+.box h2, .box h3 { margin-top: 0; }
+#who { color: #cde; }
