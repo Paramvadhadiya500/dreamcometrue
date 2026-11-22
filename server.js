@@ -43,14 +43,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Content-Security-Policy for the STUDENT pages (index.html, match.html): the browser runs only script and style
-// FILES from this site (no inline code, nothing from other sites), images from this site or data: (the tab icon),
-// connects only to this site (API and the Socket.IO WebSocket), and never shows the page inside another site.
-// A script injected into the page (e.g. through a team name) would not run. The scorer and admin pages still
-// use inline code, so they do not get it yet. Set here and not in the Caddyfile, so the tests (real server.js,
-// no Caddy) check it. Tested in e2e/csp.spec.js.
-const STUDENT_PAGES = new Set(["index.html", "match.html"].map((f) => path.join(__dirname, "public", f)));
-const STUDENT_CSP = [
+// Content-Security-Policy for the student pages (index.html, match.html) and the admin page (admin.html): the browser
+// runs only script and style FILES from this site (no inline code, nothing from other sites), images from this site
+// or data: (the tab icon), connects only to this site (API and the Socket.IO WebSocket), and never shows the page
+// inside another site. A script injected into the page (e.g. through a team name) would not run - on admin.html it
+// could otherwise steal the admin token from localStorage. The scorer page still uses inline code, so it does not get
+// it yet. Set here and not in the Caddyfile, so the tests (real server.js, no Caddy) check it. Tested in e2e/csp.spec.js.
+const CSP_PAGES = new Set(["index.html", "match.html", "admin.html"].map((f) => path.join(__dirname, "public", f)));
+const PAGE_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self'",
@@ -63,7 +63,7 @@ const STUDENT_CSP = [
 ].join("; ");
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, filePath) {
-    if (STUDENT_PAGES.has(filePath)) res.set("Content-Security-Policy", STUDENT_CSP);
+    if (CSP_PAGES.has(filePath)) res.set("Content-Security-Policy", PAGE_CSP);
   },
 }));
 const httpServer = createServer(app);

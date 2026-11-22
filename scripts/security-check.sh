@@ -76,9 +76,11 @@ else
     if echo "$HEADERS" | grep -qi "^$h:"; then pass "header $h is set"; else warn "header $h is missing"; fi
   done
   if echo "$HEADERS" | grep -qi "^x-powered-by:"; then warn "the server announces its framework (x-powered-by)"; else pass "the framework name is hidden"; fi
-  # the student pages carry a Content-Security-Policy (set by server.js, must come through Caddy)
-  CSP="$(curl -s -m 10 -D - -o /dev/null "$BASE/" 2>/dev/null | tr -d '\r' | grep -i '^content-security-policy:')"
-  if echo "$CSP" | grep -q "script-src 'self'"; then pass "the home page has a Content-Security-Policy"; else warn "the home page has no Content-Security-Policy"; fi
+  # the student pages and the admin page carry a Content-Security-Policy (set by server.js, must come through Caddy)
+  for p in "/:the home page" "/admin.html:the admin page"; do
+    CSP="$(curl -s -m 10 -D - -o /dev/null "$BASE${p%%:*}" 2>/dev/null | tr -d '\r' | grep -i '^content-security-policy:')"
+    if echo "$CSP" | grep -q "script-src 'self'"; then pass "${p#*:} has a Content-Security-Policy"; else warn "${p#*:} has no Content-Security-Policy"; fi
+  done
   RCODE="$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$BASE/ready" 2>/dev/null)"
   if [ "$RCODE" = "200" ]; then pass "/ready: the database and Redis answer"
   else fail "/ready answered $RCODE (503 = database or Redis not answering). Details: curl -s $BASE/ready"; fi
