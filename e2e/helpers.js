@@ -16,6 +16,7 @@ const REDIS_URL = process.env.TEST_REDIS_URL || "redis://127.0.0.1:56379";
 const JWT_SECRET = "e2e-test-secret-".padEnd(64, "x");   // test value only, not a secret
 const PASSWORD = "e2e-test-password";                     // test value only, not a secret
 const SCORER = "e2e_scorer";
+const ADMIN = "e2e_admin";                                // test admin for e2e/admin.spec.js (same test PASSWORD)
 const PORT = Number(process.env.E2E_PORT || 3100);        // your dev server owns 3000
 const BASE_URL = "http://127.0.0.1:" + PORT;
 const RUN = Date.now().toString(36);                      // fresh match ids every run
@@ -104,6 +105,14 @@ async function addScorer(pool) {
   );
 }
 
+async function addAdmin(pool) {
+  await pool.query(
+    `INSERT INTO users (username, password_hash, role, active) VALUES ($1, $2, 'admin', TRUE)
+     ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'admin', active = TRUE`,
+    [ADMIN, bcrypt.hashSync(PASSWORD, 4)]
+  );
+}
+
 // A new 'simple' match (points only) that the test scorer may score. Returns { id, teamA, teamB }.
 // Team names are unique to this match: the test database keeps old matches until `down`,
 // and a Playwright locator that finds two cards stops with a "strict mode" error.
@@ -157,6 +166,6 @@ async function sendPoint(socket, matchId, team = "A", value = 1) {
 }
 
 module.exports = {
-  BASE_URL, PORT, checkTestDb, migrate, freePort, startServer, openDb, addScorer, addMatch, waitUntilOnHome,
-  scorerSocket, sendPoint,
+  BASE_URL, PORT, RUN, SCORER, ADMIN, PASSWORD, checkTestDb, migrate, freePort, startServer, openDb, addScorer,
+  addAdmin, addMatch, waitUntilOnHome, scorerSocket, sendPoint,
 };
