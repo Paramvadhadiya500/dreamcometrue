@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-22 - Deployed Phase 8 steps 1-3 on the server (by hand): admin page with CSP is live
+- **What:** deploy of `dcd447e` (admin code in files + CSP on `admin.html`) by the user: `git pull`, rebuild and restart of the app container.
+- **Checked:** `./scripts/security-check.sh` on the server: 28 passed, 1 warning, 0 failed. The only WARN: "newest backup is older than 2 hours" (normal: the EC2 server is stopped when not in use, so the backup timer did not run; fix: `./scripts/backup.sh`). So the new check "the admin page has a Content-Security-Policy" PASSED through Caddy. Admin page checked by the user in production: works, Scorers tab there. Just after the deploy the Scorers tab was not visible for about 2 minutes and then was, without any action; cause NOT known (no screenshot or console output from that moment; likely the page opened while the new container was still starting, an old/half-loaded tab, or an expired login showing only the login box). Code ruled out as far as tests can: the button is plain HTML, 62 E2E tests (incl. phone size) green locally and in CI.
+- **NOT checked:** the exact moment of the missing button; the backup run after the warning.
+- **Undo:** `git revert dcd447e` (CSP off) and/or `9001f60` (code back inline), then a normal app deploy.
+
 ## 2026-11-22 - Phase 8 steps 1-3 (admin page tests, code moved out, CSP) pushed; all 4 CI jobs green
 - **What:** `git push` of `1e559d1`..`dcd447e` (admin E2E tests, inline code moved into `public/css/admin.css` + `public/js/admin.js`, CSP on `admin.html`). NOT deployed yet (the server runs Phase 7).
 - **Checked:** GitHub Actions run for `dcd447e`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API; the e2e test count was not read from the log).
