@@ -34,10 +34,11 @@ const tag = () => RUN + "-" + ++n;
 // Fills the "New match" form for a simple match and saves it. Returns the new row and the id from the server.
 async function createMatch(page, { scorer = false } = {}) {
   const t = tag();
-  const m = { teamA: "Ant " + t, teamB: "Bee " + t, name: "E2E Admin: Ant " + t + " vs Bee " + t };
+  const m = { teamA: "Ant " + t, teamB: "Bee " + t, name: "E2E Admin (Mix): Ant " + t + " vs Bee " + t };
   await page.getByRole("button", { name: "+ New match" }).click();
   await expect(page.locator("#formTitle")).toHaveText("New match");
   await page.locator("#fSport").selectOption("simple");
+  await page.locator("#fCat").selectOption("mix");
   await page.locator("#fComp").fill("E2E Admin");
   await page.locator("#fTeamA").fill(m.teamA);
   await page.locator("#fTeamB").fill(m.teamB);
@@ -131,17 +132,49 @@ test.describe("admin page (today's behaviour)", () => {
       }
     }
     await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator("#fErr")).toHaveText("Choose a category");
+    await page.locator("#fCat").selectOption("boys");
+    await page.getByRole("button", { name: "Save" }).click();
     await expect(page.locator("#fErr")).toHaveText("give a match name, or both team names");
     await expect(page.locator("#formBox")).toBeVisible();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.locator("#formBox")).toBeHidden();
   });
 
+  test("college rules: cricket overs come from the category and stage; Mix cricket is refused", async ({ page }) => {
+    await login(page);
+    await page.getByRole("button", { name: "+ New match" }).click();
+    await page.locator("#fSport").selectOption("cricket");
+    const overs = page.locator("#fOvers");
+    const pick = async (category, stage) => {
+      await page.locator("#fCat").selectOption(category);
+      await page.locator("#fStage").selectOption(stage);
+    };
+    await pick("boys", "group");             await expect(overs).toHaveValue("12");
+    await pick("boys", "quarter_final");     await expect(overs).toHaveValue("12");
+    await pick("boys", "semi_final");        await expect(overs).toHaveValue("14");
+    await pick("boys", "final");             await expect(overs).toHaveValue("14");
+    await pick("girls", "group");            await expect(overs).toHaveValue("10");
+    await pick("girls", "final");            await expect(overs).toHaveValue("12");
+    await pick("male_faculty", "semi_final"); await expect(overs).toHaveValue("14");
+    await expect(page.locator("#oversHint")).toHaveText("College rule: 14 overs");
+    await overs.fill("9");                   // the admin can still change it (rain)
+    await expect(overs).toHaveValue("9");
+
+    await pick("mix", "group");
+    await expect(page.locator("#oversHint")).toHaveText("Cricket is only for Student Boys, Student Girls and Male Faculty");
+    await page.locator("#fTeamA").fill("Ant " + tag());
+    await page.locator("#fTeamB").fill("Bee " + tag());
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator("#fErr")).toHaveText("cricket is only for Boys, Girls and Male Faculty");
+    await page.getByRole("button", { name: "Cancel" }).click();
+  });
+
   test("create a match with a scorer, edit it, delete it (Cancel keeps it)", async ({ page }) => {
     const seen = answerDialogs(page, [false, true]);
     await login(page);
     const m = await createMatch(page, { scorer: true });
-    await expect(m.row).toContainText("Other sport · E2E Admin · " + m.teamA + " vs " + m.teamB);
+    await expect(m.row).toContainText("Other sport · Mix · E2E Admin · " + m.teamA + " vs " + m.teamB);
     await expect(m.row).toContainText("Scorers: " + SCORER);
     await expect(m.row).toContainText("Not started");
     await expect(m.row.getByRole("button", { name: "History" })).toHaveCount(0);

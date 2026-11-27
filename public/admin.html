@@ -46,8 +46,21 @@
               <option value="volleyball">Volleyball</option>
               <option value="simple">Other sport (simple score)</option>
             </select></div>
-          <div><label for="fComp">Competition (groups the points table)</label>
-            <input id="fComp" list="compList" placeholder="e.g. Cricket (Boys)"></div>
+          <div><label for="fCat">Category</label>
+            <select id="fCat">
+              <option value="">Choose a category</option>
+              <option value="boys">Student Boys</option>
+              <option value="girls">Student Girls</option>
+              <option value="male_faculty">Male Faculty</option>
+              <option value="female_faculty">Female Faculty</option>
+              <option value="mix">Mix (students and faculty)</option>
+            </select></div>
+        </div>
+
+        <div class="cols">
+          <div><label for="fComp">Competition (optional, e.g. Chess, Badminton)</label>
+            <input id="fComp" list="compList" placeholder="empty = the sport's name"></div>
+          <div><span class="small">The points table is per competition and category, e.g. "Chess (Mix)".</span></div>
         </div>
 
         <div class="cols">
@@ -62,14 +75,20 @@
 
         <div class="cols">
           <div><label for="fStage">Stage</label>
-            <select id="fStage"><option value="group">Group (counts in the points table)</option><option value="knockout">Knockout</option></select></div>
+            <select id="fStage">
+              <option value="group">Group (counts in the points table)</option>
+              <option value="quarter_final">Quarter Final</option>
+              <option value="semi_final">Semi Final</option>
+              <option value="final">Final</option>
+            </select></div>
           <div><label for="fName">Match name (optional)</label><input id="fName" placeholder="made from the teams if empty"></div>
         </div>
 
         <div id="crGroup">
           <label>Cricket settings</label>
           <div class="cols">
-            <div><span class="small">Overs per innings (1-50)</span><input id="fOvers" type="number" min="1" max="50" value="10"></div>
+            <div><span class="small">Overs per innings (1-50)</span><input id="fOvers" type="number" min="1" max="50" value="12">
+              <span id="oversHint" class="small"></span></div>
             <div><span class="small">Players per team (2-11)</span><input id="fPlayers" type="number" min="2" max="11" value="11"></div>
           </div>
           <div class="cols">

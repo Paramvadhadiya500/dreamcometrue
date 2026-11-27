@@ -29,7 +29,7 @@ function card(m) {
   a.href = "/match.html?id=" + encodeURIComponent(m.id);
 
   const top = el("div", undefined, "small");
-  top.appendChild(document.createTextNode(m.competition + (m.stage === "knockout" ? " \u00b7 Knockout" : "") + " \u00b7 "));
+  top.appendChild(document.createTextNode(m.competition + (m.stageLabel ? " \u00b7 " + m.stageLabel : "") + " \u00b7 "));
   if (m.status === "live") top.appendChild(el("span", "LIVE", "liveTag"));
   else top.appendChild(document.createTextNode(m.status === "finished" ? "Finished" : (fmtTime(m.startTime) || "Time to be announced")));
   a.appendChild(top);

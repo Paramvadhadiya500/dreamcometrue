@@ -23,6 +23,26 @@ function checkConfig(c) {
   return null;
 }
 
+// ---------- college rules: overs per innings ----------
+// Cricket (Boys) and Cricket (Male Faculty): 12 overs, Semi Final and Final 14 overs.
+// Cricket (Girls): 10 overs, Semi Final and Final 12 overs.
+// Other categories have no college rule (the admin does not allow cricket for them).
+const COLLEGE_OVERS = {
+  boys:         { normal: 12, big: 14 },
+  male_faculty: { normal: 12, big: 14 },
+  girls:        { normal: 10, big: 12 },
+};
+const NORMAL_STAGES = ["group", "quarter_final", "knockout"];
+const BIG_STAGES = ["semi_final", "final"];
+
+// Returns the number of overs, or null if there is no college rule for this category and stage.
+function collegeOvers(category, stage) {
+  if (!Object.hasOwn(COLLEGE_OVERS, category)) return null;
+  if (BIG_STAGES.includes(stage)) return COLLEGE_OVERS[category].big;
+  if (NORMAL_STAGES.includes(stage)) return COLLEGE_OVERS[category].normal;
+  return null;
+}
+
 // Fills in defaults for anything missing. Falls back to the defaults if the stored settings are invalid.
 function normalizeConfig(raw) {
   const given = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -309,4 +329,4 @@ function headline(state, names) {
   return text;
 }
 
-module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall, result, headline };
+module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall, result, headline, collegeOvers, COLLEGE_OVERS };

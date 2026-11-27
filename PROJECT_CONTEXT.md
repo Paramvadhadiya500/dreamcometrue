@@ -40,7 +40,8 @@ engine.js            table tennis rules + effectivePoints() (undo handling)
 engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball
 engines/tableTennis.js, simple.js, cricket.js, volleyball.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql
+categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
@@ -82,14 +83,15 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   After an admin change the server clears the Redis state, rebuilds it and pushes it to open pages (so new team names appear at once).
 - Team names: matches.team_a / team_b; the state has teamA / teamB ("Team A"/"Team B" when empty). Cricket result text has the real names.
 - Home page data: status is upcoming (no events), live, or finished (from the state). Home pages poll every 10 s; the match page is live through sockets.
-- Points table: only stage='group', finished, two different non-empty team names (matched ignoring case/spaces), grouped by competition
+- Points table: only stage='group', finished, two different non-empty team names (matched ignoring case/spaces), grouped by competition + category ("Cricket (Boys)")
   (the competition text, or the sport name). Order: points, wins, NRR (cricket) or score difference, name. Abandoned cricket = 1 point each, no NRR change.
 
 ## 6. Actions and state per sport
 - table_tennis (settings: matches.best_of): actions `point{team A|B}`, `undo`. State: pointsA/B, gamesA/B, finishedGames, winner, status.
   Rules: game to 11, win by 2, best of 3 (or 5, 7).
 - simple (any other sport): actions `point{team, value 1-10}`, `finish`, `undo`. State: scoreA, scoreB, status, winner (A, B or "draw").
-- cricket (settings in matches.config: overs 1-50, players 2-11, firstBatting A|B, freeHit true|false):
+- cricket (college rule, engines/cricket.js collegeOvers: Boys and Male Faculty 12 overs, Semi Final/Final 14; Girls 10, Semi Final/Final 12; only these 3 categories; the admin form fills it and can change it)
+  (settings in matches.config: overs 1-50, players 2-11, firstBatting A|B, freeHit true|false):
   actions `ball{data:{runs 0-6, extra null|wide|noball|bye|legbye, wicket null|{kind}}}`, `end_innings`, `finish` (abandon), `undo`.
   Wide: runs = EXTRA runs (+1 penalty added by the engine). No ball: runs = bat runs (+1 penalty), next ball is a free hit (only run out).
   Bye/legbye: runs >= 1, legal ball. Wicket kinds: bowled, caught, lbw, stumped, runout, hitwicket. Max wickets = players - 1.
@@ -106,7 +108,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
 - users(username PK, password_hash, role admin|scorer, active)
-- matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, stage group|knockout, venue, start_time timestamptz, created_at)
+- matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
   type in: point, undo, finish, ball, end_innings

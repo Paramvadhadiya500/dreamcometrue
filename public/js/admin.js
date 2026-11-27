@@ -112,8 +112,10 @@ function renderMatches() {
     const row = el("div", undefined, "row");
     row.appendChild(el("div", m.name, "title"));
     const bits = [SPORT_NAMES[m.sport] || m.sport];
+    if (m.category && overview.categories) bits.push(overview.categories[m.category] || m.category);
     if (m.competition) bits.push(m.competition);
-    if (m.stage === "knockout") bits.push("Knockout");
+    if (m.stage !== "group") bits.push((overview.stages && overview.stages[m.stage]) || m.stage);
+    if (m.sport === "cricket" && m.config) bits.push(m.config.overs + " overs");
     if (m.teamA) bits.push(m.teamA + " vs " + m.teamB);
     if (m.startTime) bits.push(new Date(m.startTime).toLocaleString([], timeFmt));
     if (m.venue) bits.push(m.venue);
@@ -175,6 +177,32 @@ function sportChanged() {
   $("vbGroup").style.display = s === "volleyball" ? "block" : "none";
 }
 
+// College rule: the overs come from the category and the stage (the table comes from the server).
+// Only fills the box when the admin changes sport, category or stage; the admin can still type another number.
+function collegeRule() {
+  const table = overview.collegeOvers || {};
+  const cat = $("fCat").value;
+  return table[cat] ? table[cat][$("fStage").value] || null : null;
+}
+
+function showOversHint() {
+  const cat = $("fCat").value;
+  const rule = collegeRule();
+  let hint = "";
+  if ($("fSport").value === "cricket") {
+    if (rule) hint = "College rule: " + rule + " overs";
+    else if (cat) hint = "Cricket is only for Student Boys, Student Girls and Male Faculty";
+  }
+  $("oversHint").textContent = hint;
+  $("oversHint").className = rule || !cat ? "small" : "small warn";
+}
+
+function fillCollegeOvers() {
+  const rule = collegeRule();
+  if (rule && $("fSport").value === "cricket" && !$("fOvers").disabled) $("fOvers").value = rule;
+  showOversHint();
+}
+
 function openForm(m) {
   editingId = m ? m.id : null;
   $("formTitle").textContent = m ? "Edit match" : "New match";
@@ -185,9 +213,18 @@ function openForm(m) {
   $("fTeamB").value = m ? m.teamB : "";
   $("fTime").value = m ? toLocalInput(m.startTime) : "";
   $("fVenue").value = m ? m.venue : "";
-  $("fStage").value = m ? m.stage : "group";
+  $("fCat").value = m ? m.category || "" : "";
+  // an old match can have stage "knockout", which the list no longer offers: add it so saving keeps it
+  const stage = m ? m.stage : "group";
+  if (![...$("fStage").options].some((o) => o.value === stage)) {
+    const o = document.createElement("option");
+    o.value = stage;
+    o.textContent = (overview.stages && overview.stages[stage]) || stage;
+    $("fStage").appendChild(o);
+  }
+  $("fStage").value = stage;
   $("fName").value = m ? m.name : "";
-  const c = m && m.sport === "cricket" ? m.config : { overs: 10, players: 11, firstBatting: "A", freeHit: true };
+  const c = m && m.sport === "cricket" ? m.config : { overs: 12, players: 11, firstBatting: "A", freeHit: true };
   $("fOvers").value = c.overs;
   $("fPlayers").value = c.players;
   $("fFirst").value = c.firstBatting;
@@ -199,6 +236,7 @@ function openForm(m) {
   const locked = !!(m && m.events > 0);
   $("lockNote").style.display = locked ? "block" : "none";
   for (const id of ["fSport", "fOvers", "fPlayers", "fFirst", "fFree", "fBest", "fVbBest"]) $(id).disabled = locked;
+  showOversHint();                     // an existing match keeps its saved overs; only the hint is shown
 
   const box = $("fScorers");
   box.textContent = "";
@@ -228,6 +266,7 @@ function readForm() {
   const body = {
     sport,
     competition: $("fComp").value,
+    category: $("fCat").value,
     stage: $("fStage").value,
     teamA: $("fTeamA").value,
     teamB: $("fTeamB").value,
@@ -254,6 +293,8 @@ async function saveForm() {
   $("fSave").disabled = true;
   try {
     const body = readForm();
+    // a new match must have a category (old matches without one can still be edited)
+    if (!editingId && !body.category) throw new Error("Choose a category");
     if (editingId) await api("PUT", "/matches/" + encodeURIComponent(editingId), body);
     else await api("POST", "/matches", body);
     closeForm();
@@ -406,7 +447,9 @@ $("logoutBtn").addEventListener("click", () => logout());
 $("tabMatches").addEventListener("click", () => showTab("matches"));
 $("tabScorers").addEventListener("click", () => showTab("scorers"));
 $("newBtn").addEventListener("click", () => openForm(null));
-$("fSport").addEventListener("change", () => sportChanged());
+$("fSport").addEventListener("change", () => { sportChanged(); fillCollegeOvers(); });
+$("fCat").addEventListener("change", () => fillCollegeOvers());
+$("fStage").addEventListener("change", () => fillCollegeOvers());
 $("fSave").addEventListener("click", () => saveForm());
 $("formCancel").addEventListener("click", () => closeForm());
 $("historyRefresh").addEventListener("click", () => loadHistory());

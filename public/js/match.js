@@ -165,7 +165,7 @@ async function loadMeta() {
     if (r.status === 404) { $("name").textContent = "Match not found"; return; }
     const m = await r.json();
     const parts = [m.competition];
-    if (m.stage === "knockout") parts.push("Knockout");
+    if (m.stageLabel) parts.push(m.stageLabel);
     if (m.venue) parts.push(m.venue);
     if (m.startTime) parts.push(new Date(m.startTime).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
     $("meta").textContent = parts.join(" · ");

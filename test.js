@@ -285,6 +285,46 @@ assert.deepStrictEqual(cricket.normalizeConfig(null), { overs: 10, players: 11, 
 assert.deepStrictEqual(cricket.normalizeConfig({ overs: 99 }), { overs: 10, players: 11, firstBatting: "A", freeHit: true });
 assert.deepStrictEqual(cricket.normalizeConfig({ overs: 5, hack: 1 }), { overs: 5, players: 11, firstBatting: "A", freeHit: true });
 
+// ---- college rules: overs from category and stage ----
+// Boys / Male Faculty: 12 overs, Semi Final and Final 14.  Girls: 10, Semi Final and Final 12.
+{
+  const expect = {
+    boys:           { group: 12, quarter_final: 12, semi_final: 14, final: 14, knockout: 12 },
+    male_faculty:   { group: 12, quarter_final: 12, semi_final: 14, final: 14, knockout: 12 },
+    girls:          { group: 10, quarter_final: 10, semi_final: 12, final: 12, knockout: 10 },
+    female_faculty: { group: null, quarter_final: null, semi_final: null, final: null, knockout: null },
+    mix:            { group: null, quarter_final: null, semi_final: null, final: null, knockout: null },
+    "":             { group: null, quarter_final: null, semi_final: null, final: null, knockout: null },
+  };
+  for (const [category, byStage] of Object.entries(expect)) {
+    for (const [stage, overs] of Object.entries(byStage)) {
+      assert.strictEqual(cricket.collegeOvers(category, stage), overs, "overs for " + category + " / " + stage);
+    }
+  }
+  assert.strictEqual(cricket.collegeOvers("boys", "unknown"), null, "unknown stage: no rule");
+  assert.strictEqual(cricket.collegeOvers("toString", "group"), null, "not fooled by object built-ins");
+  assert.strictEqual(cricket.collegeOvers(undefined, undefined), null);
+
+  // the engine really stops at the college numbers (12 overs = 72 balls, 14 overs = 84 balls)
+  for (const overs of [10, 12, 14]) {
+    const balls1 = overs * 6;
+    let s = run(balls(balls1 - 1, 1), { overs, players: 11 });
+    assert.strictEqual(s.inning, 1, overs + " overs: one ball before the end, still innings 1");
+    s = run(balls(balls1, 1), { overs, players: 11 });
+    assert.strictEqual(s.inning, 2, overs + " overs: innings 1 ends after " + balls1 + " legal balls");
+    assert.strictEqual(s.innings[0].overs, overs + ".0");
+    assert.strictEqual(s.innings[0].endReason, "overs complete");
+    assert.strictEqual(s.maxOvers, overs);
+    assert.strictEqual(s.ballsLeft, balls1, "the chasing team gets the same " + overs + " overs");
+    // second innings: same runs -> tie, one less -> team A wins by 1 run
+    const tie = run([...balls(balls1, 1), ...balls(balls1, 1)], { overs, players: 11 });
+    assert.strictEqual(tie.status, "finished");
+    assert.strictEqual(tie.winner, "tie");
+    const win = run([...balls(balls1, 1), ...balls(balls1 - 1, 1), ball(0)], { overs, players: 11 });
+    assert.strictEqual(win.resultText, "Team A won by 1 run");
+  }
+}
+
 // ---- random matches: 400 full games, checking the arithmetic independently ----
 function rng(seed) {
   return function () {
@@ -460,6 +500,27 @@ table = buildStandings([
 ]);
 assert.deepStrictEqual(table.map((t) => t.name), ["Alpha", "Zed"]);
 assert.deepStrictEqual(buildStandings([]), []);
+
+// categories: the same teams in Boys and Girls give two separate tables
+assert.strictEqual(competitionOf({ competition: "", sport: "cricket", category: "boys" }), "Cricket (Boys)");
+assert.strictEqual(competitionOf({ competition: "", sport: "simple", category: "mix" }), "Other (Mix)");
+assert.strictEqual(competitionOf({ competition: "Chess", sport: "simple", category: "female_faculty" }), "Chess (Female Faculty)");
+assert.strictEqual(competitionOf({ competition: "Cricket (boys)", sport: "cricket", category: "boys" }), "Cricket (boys)", "not added twice");
+assert.strictEqual(competitionOf({ competition: "Cricket", sport: "cricket", category: "" }), "Cricket", "no category: same as before");
+assert.strictEqual(competitionOf({ competition: "Cricket", sport: "cricket", category: "nonsense" }), "Cricket");
+table = buildStandings([
+  done({ category: "boys", teamA: "CSE", teamB: "ME", result: { finished: true, winner: "A", forA: 50, forB: 40, ballsA: 72, ballsB: 72 } }),
+  done({ category: "girls", teamA: "CSE", teamB: "ME", result: { finished: true, winner: "B", forA: 30, forB: 31, ballsA: 60, ballsB: 50 } }),
+]);
+assert.deepStrictEqual(table.map((t) => t.name), ["Cricket (Boys)", "Cricket (Girls)"]);
+assert.strictEqual(table[0].rows[0].team, "CSE", "boys: CSE won");
+assert.strictEqual(table[1].rows[0].team, "ME", "girls: ME won");
+assert.strictEqual(table[0].rows[0].played, 1, "the girls match is not counted for the boys");
+// Semi Final and Final do not count in the points table (only Group does)
+for (const stage of ["quarter_final", "semi_final", "final"]) {
+  assert.deepStrictEqual(buildStandings([done({ stage, category: "boys", teamA: "A", teamB: "B",
+    result: { finished: true, winner: "A", forA: 1, forB: 0, ballsA: 6, ballsB: 6 } })]), [], stage + " is not counted");
+}
 assert.deepStrictEqual(buildStandings([{ stage: "group", competition: "X", sport: "simple", teamA: "A", teamB: "B", result: null }]), []);
 
 
@@ -1067,6 +1128,50 @@ const { createQueue } = require("./public/queue");
   for (const [ms, text] of cases) assert.strictEqual(agoText(ms), text, ms + " ms");
 }
 
+// ---------- admin API: category, stage and college overs (admin.js parseMatch) ----------
+{
+  const { parseMatch } = require("./admin");
+  const crBody = (o) => ({ sport: "cricket", teamA: "CSE", teamB: "ME", category: "boys", stage: "group",
+    config: { players: 11, firstBatting: "A", freeHit: true }, ...o });
+  const problem = (body) => { try { parseMatch(body); return null; } catch (e) { return e.message; } };
+
+  // overs not sent: the college number is used
+  assert.strictEqual(parseMatch(crBody({})).config.overs, 12, "boys group = 12");
+  assert.strictEqual(parseMatch(crBody({ stage: "quarter_final" })).config.overs, 12, "boys quarter final = 12");
+  assert.strictEqual(parseMatch(crBody({ stage: "semi_final" })).config.overs, 14, "boys semi final = 14");
+  assert.strictEqual(parseMatch(crBody({ stage: "final" })).config.overs, 14, "boys final = 14");
+  assert.strictEqual(parseMatch(crBody({ category: "girls" })).config.overs, 10, "girls group = 10");
+  assert.strictEqual(parseMatch(crBody({ category: "girls", stage: "final" })).config.overs, 12, "girls final = 12");
+  assert.strictEqual(parseMatch(crBody({ category: "male_faculty", stage: "semi_final" })).config.overs, 14, "male faculty semi final = 14");
+  // the admin can still change the overs (for example a match shortened by rain)
+  assert.strictEqual(parseMatch(crBody({ config: { overs: 8, players: 11 } })).config.overs, 8);
+  // old matches and scripts: no category, overs default 10 as before
+  assert.strictEqual(parseMatch(crBody({ category: undefined })).config.overs, 10);
+  assert.strictEqual(parseMatch(crBody({ category: "" })).category, "");
+
+  // cricket is only for Boys, Girls and Male Faculty
+  assert.match(problem(crBody({ category: "female_faculty" })), /cricket is only for/);
+  assert.match(problem(crBody({ category: "mix" })), /cricket is only for/);
+  // the other sports take all 5 categories
+  for (const category of ["boys", "girls", "male_faculty", "female_faculty", "mix"]) {
+    for (const sport of ["simple", "table_tennis", "volleyball"]) {
+      assert.strictEqual(parseMatch({ sport, teamA: "X", teamB: "Y", category }).category, category, sport + " " + category);
+    }
+  }
+  // bad values are refused
+  assert.match(problem(crBody({ category: "staff" })), /category/);
+  assert.match(problem(crBody({ category: 5 })), /category/);
+  assert.match(problem(crBody({ category: "toString" })), /category/);
+  assert.match(problem(crBody({ stage: "semi" })), /stage/);
+  // every stage is accepted, "knockout" too (old matches, load-test scripts); empty = group
+  for (const stage of ["group", "quarter_final", "semi_final", "final", "knockout"]) {
+    assert.strictEqual(parseMatch(crBody({ stage })).stage, stage);
+  }
+  assert.strictEqual(parseMatch(crBody({ stage: "" })).stage, "group");
+  // the automatic match name includes the category
+  assert.strictEqual(parseMatch({ sport: "simple", teamA: "X", teamB: "Y", category: "mix", competition: "Chess" }).name, "Chess (Mix): X vs Y");
+}
+
 // ---------- admin page: no inline code (Phase 8; a CSP would block it) ----------
 {
   const fs = require("fs");
@@ -1080,7 +1185,7 @@ const { createQueue } = require("./public/queue");
   // every element admin.js attaches a listener to must exist, or the whole script stops at that line
   const js = fs.readFileSync(path.join(__dirname, "public", "js", "admin.js"), "utf8");
   const wired = [...js.matchAll(/\$\("([A-Za-z]+)"\)\.addEventListener/g)].map((x) => x[1]);
-  assert.strictEqual(wired.length, 11, "the 11 buttons/selects that had on...= attributes");
+  assert.strictEqual(wired.length, 13, "the 11 buttons/selects that had on...= attributes, plus Category and Stage (college overs)");
   for (const id of wired) assert.ok(html.includes('id="' + id + '"'), "admin.html has id=\"" + id + "\" (used in admin.js)");
 }
 

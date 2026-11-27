@@ -25,7 +25,7 @@
   // Every field of a match that its card on the home page SHOWS (see card() in index.html).
   // test.js checks that card() reads no other field: a field missing here would mean a card that
   // never updates when that field changes.
-  var CARD_FIELDS = ["status", "competition", "stage", "startTime", "hasTeams", "teamA", "teamB",
+  var CARD_FIELDS = ["status", "competition", "stage", "stageLabel", "startTime", "hasTeams", "teamA", "teamB",
                      "name", "venue", "headline", "resultText"];
 
   // One string for "what this card shows". Same string as last time = the card on screen is still right:

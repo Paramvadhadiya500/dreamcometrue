@@ -11,6 +11,7 @@ const { effectivePoints } = require("./engine");
 const { getEngine } = require("./engines");
 const { createHome } = require("./home");
 const { competitionOf } = require("./standings");
+const { stageLabel } = require("./categories");
 const { createAdminRouter } = require("./admin");
 const { FailureLimiter } = require("./rateLimit");
 const { checkJwtSecret } = require("./config");
@@ -397,7 +398,7 @@ app.get("/api/match/:id", async (req, res) => {
     const hit = matchMetaCache.get(id);
     if (hit && Date.now() - hit.at < 10000) return res.json(hit.data);
     const r = await pool.query(
-      "SELECT id, name, sport, team_a, team_b, competition, stage, venue, start_time FROM matches WHERE id = $1", [id]
+      "SELECT id, name, sport, team_a, team_b, competition, category, stage, venue, start_time FROM matches WHERE id = $1", [id]
     );
     if (r.rowCount === 0) return res.status(404).json({ error: "match not found" });
     const m = r.rows[0];
@@ -405,8 +406,9 @@ app.get("/api/match/:id", async (req, res) => {
       id: m.id,
       name: m.name,
       sport: m.sport,
-      competition: competitionOf({ competition: m.competition, sport: m.sport }),
+      competition: competitionOf({ competition: m.competition, sport: m.sport, category: m.category }),
       stage: m.stage,
+      stageLabel: stageLabel(m.stage),
       venue: m.venue,
       startTime: m.start_time ? new Date(m.start_time).toISOString() : null,
       teamA: (m.team_a || "").trim() || "Team A",

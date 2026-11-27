@@ -3,6 +3,7 @@
 const zlib = require("zlib");
 const crypto = require("crypto");
 const { buildStandings, competitionOf, POINTS } = require("./standings");
+const { stageLabel } = require("./categories");
 
 // The JSON text, its compressed copy and an ETag are made once per rebuild, not once per student.
 function makePacket(object) {
@@ -20,7 +21,7 @@ function createHome({ pool, getState, getEngine }) {
 
   async function build() {
     const r = await pool.query(
-      `SELECT m.id, m.name, m.sport, m.team_a, m.team_b, m.competition, m.stage, m.venue, m.start_time,
+      `SELECT m.id, m.name, m.sport, m.team_a, m.team_b, m.competition, m.category, m.stage, m.venue, m.start_time,
               EXISTS (SELECT 1 FROM events e WHERE e.match_id = m.id) AS started
        FROM matches m
        ORDER BY m.start_time ASC NULLS LAST, m.created_at ASC, m.id ASC
@@ -57,7 +58,7 @@ function createHome({ pool, getState, getEngine }) {
           }
         }
 
-        forStandings.push({ competition: m.competition, sport: m.sport, stage: m.stage, teamA: m.team_a, teamB: m.team_b, result });
+        forStandings.push({ competition: m.competition, category: m.category, sport: m.sport, stage: m.stage, teamA: m.team_a, teamB: m.team_b, result });
 
         return {
           id: m.id,
@@ -65,6 +66,7 @@ function createHome({ pool, getState, getEngine }) {
           sport: m.sport,
           competition,
           stage: m.stage,
+          stageLabel: stageLabel(m.stage),
           venue: m.venue,
           startTime: m.start_time ? new Date(m.start_time).toISOString() : null,
           hasTeams,

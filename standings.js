@@ -6,6 +6,8 @@
 // Net run rate = runs scored per over - runs conceded per over. A team that was all out is
 // counted as having faced its full quota of overs.
 
+const { categoryLabel } = require("./categories");
+
 const POINTS = { win: 2, draw: 1, loss: 0 };
 const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other" };
 
@@ -15,9 +17,15 @@ const num = (x) => (Number.isFinite(x) ? x : 0);
 const rate = (runs, balls) => (balls > 0 ? (runs * 6) / balls : 0);
 const round3 = (x) => Math.round(x * 1000) / 1000;
 
-// The competition (group of matches) a match belongs to: what the admin typed, or the sport's name.
+// The competition (group of matches) a match belongs to: what the admin typed, or the sport's name,
+// plus the category: "Cricket (Boys)", "Chess (Mix)". So Boys and Girls never share one points table.
+// If the admin already typed the category name ("Cricket (Boys)"), it is not added twice.
 function competitionOf(m) {
-  return norm(m.competition) || SPORT_LABELS[m.sport] || "Other";
+  const base = norm(m.competition) || SPORT_LABELS[m.sport] || "Other";
+  const cat = categoryLabel(m.category);
+  if (!cat) return base;
+  if (base.toLowerCase().includes("(" + cat.toLowerCase() + ")")) return base;
+  return base + " (" + cat + ")";
 }
 
 // matches: [{ competition, sport, stage, teamA, teamB, result }]

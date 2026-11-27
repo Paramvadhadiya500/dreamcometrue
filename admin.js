@@ -6,10 +6,20 @@ const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
 const volleyball = require("./engines/volleyball");
 const { buildHistory } = require("./audit");
+const { CATEGORIES, STAGES } = require("./categories");
+const { competitionOf } = require("./standings");
+
+const CRICKET_CATEGORIES = Object.keys(cricket.COLLEGE_OVERS);   // boys, girls, male_faculty
+
+// { boys: { group: 12, quarter_final: 12, semi_final: 14, final: 14, knockout: 12 }, girls: {...}, ... }
+const OVERS_TABLE = {};
+for (const c of CRICKET_CATEGORIES) {
+  OVERS_TABLE[c] = {};
+  for (const s of Object.keys(STAGES)) OVERS_TABLE[c][s] = cricket.collegeOvers(c, s);
+}
 
 const HISTORY_LIMIT = 3000;   // actions listed per match (a real match has a few hundred)
 
-const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other" };
 const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", simple: "sm" };
 
 class Problem extends Error {
@@ -38,7 +48,18 @@ function parseMatch(body) {
 
   const competition = text(body.competition, "Competition");
   const stage = body.stage === undefined || body.stage === null || body.stage === "" ? "group" : body.stage;
-  if (stage !== "group" && stage !== "knockout") throw new Problem("stage must be group or knockout");
+  if (typeof stage !== "string" || !Object.hasOwn(STAGES, stage)) {
+    throw new Problem("stage must be group, quarter_final, semi_final or final");
+  }
+
+  // "" = not set (old matches, scripts). The admin form always sends one of the 5.
+  const category = body.category === undefined || body.category === null ? "" : body.category;
+  if (category !== "" && (typeof category !== "string" || !Object.hasOwn(CATEGORIES, category))) {
+    throw new Problem("category must be boys, girls, male_faculty, female_faculty or mix");
+  }
+  if (sport === "cricket" && category !== "" && !CRICKET_CATEGORIES.includes(category)) {
+    throw new Problem("cricket is only for Boys, Girls and Male Faculty");
+  }
 
   const teamA = text(body.teamA, "Team A");
   const teamB = text(body.teamB, "Team B");
@@ -50,7 +71,7 @@ function parseMatch(body) {
   let name = text(body.name, "Match name", { max: 80 });
   if (!name) {
     if (!teamA) throw new Problem("give a match name, or both team names");
-    name = ((competition || SPORT_LABELS[sport]) + ": " + teamA + " vs " + teamB).slice(0, 80);
+    name = (competitionOf({ competition, sport, category }) + ": " + teamA + " vs " + teamB).slice(0, 80);
   }
 
   let startTime = null;
@@ -70,8 +91,10 @@ function parseMatch(body) {
     if (![1, 3, 5, 7].includes(bestOf)) throw new Problem("best of must be 1, 3, 5 or 7");
   } else if (sport === "cricket") {
     const c = body.config && typeof body.config === "object" ? body.config : {};
+    // overs not sent: the college rule for this category and stage, else the old default (10)
+    const ruleOvers = cricket.collegeOvers(category, stage);
     config = {
-      overs: c.overs,
+      overs: c.overs === undefined || c.overs === null ? (ruleOvers || cricket.normalizeConfig({}).overs) : c.overs,
       players: c.players,
       firstBatting: c.firstBatting === undefined ? "A" : c.firstBatting,
       freeHit: c.freeHit === undefined ? true : c.freeHit,
@@ -100,7 +123,7 @@ function parseMatch(body) {
     scorers = [...new Set(body.scorers)];
   }
 
-  return { name, sport, competition, stage, teamA, teamB, venue, startTime, bestOf, config, scorers };
+  return { name, sport, competition, category, stage, teamA, teamB, venue, startTime, bestOf, config, scorers };
 }
 
 function checkMatchId(id) {
@@ -149,7 +172,7 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
   // ----- overview: everything the admin page needs in one call -----
   router.get("/overview", wrap(async (req, res) => {
     const matches = await pool.query(
-      `SELECT m.id, m.name, m.sport, m.best_of, m.config, m.team_a, m.team_b, m.competition, m.stage, m.venue, m.start_time,
+      `SELECT m.id, m.name, m.sport, m.best_of, m.config, m.team_a, m.team_b, m.competition, m.category, m.stage, m.venue, m.start_time,
               (SELECT count(*) FROM events e WHERE e.match_id = m.id)::int AS events
        FROM matches m
        ORDER BY m.start_time ASC NULLS LAST, m.created_at ASC, m.id ASC
@@ -181,6 +204,7 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         teamA: m.team_a,
         teamB: m.team_b,
         competition: m.competition,
+        category: m.category,
         stage: m.stage,
         venue: m.venue,
         startTime: m.start_time ? new Date(m.start_time).toISOString() : null,
@@ -194,6 +218,9 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
       users: users.rows,
       teams: [...teams].sort((a, b) => a.localeCompare(b)),
       competitions: [...competitions].sort((a, b) => a.localeCompare(b)),
+      categories: CATEGORIES,
+      stages: STAGES,
+      collegeOvers: OVERS_TABLE,                 // the admin form fills the overs from this (same numbers as the server)
     });
   }));
 
@@ -209,9 +236,9 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         try {
           await checkScorers(client, m.scorers);
           await client.query(
-            `INSERT INTO matches (id, name, sport, best_of, config, team_a, team_b, competition, stage, venue, start_time)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-            [candidate, m.name, m.sport, m.bestOf, JSON.stringify(m.config), m.teamA, m.teamB, m.competition, m.stage, m.venue, m.startTime]
+            `INSERT INTO matches (id, name, sport, best_of, config, team_a, team_b, competition, stage, venue, start_time, category)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+            [candidate, m.name, m.sport, m.bestOf, JSON.stringify(m.config), m.teamA, m.teamB, m.competition, m.stage, m.venue, m.startTime, m.category]
           );
           if (m.scorers) await setScorers(client, candidate, m.scorers);
           await client.query("COMMIT");
@@ -255,9 +282,9 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         await checkScorers(client, m.scorers);
         await client.query(
           `UPDATE matches SET name = $2, sport = $3, best_of = $4, config = $5, team_a = $6, team_b = $7,
-                  competition = $8, stage = $9, venue = $10, start_time = $11
+                  competition = $8, stage = $9, venue = $10, start_time = $11, category = $12
            WHERE id = $1`,
-          [id, m.name, m.sport, m.bestOf, JSON.stringify(m.config), m.teamA, m.teamB, m.competition, m.stage, m.venue, m.startTime]
+          [id, m.name, m.sport, m.bestOf, JSON.stringify(m.config), m.teamA, m.teamB, m.competition, m.stage, m.venue, m.startTime, m.category]
         );
         if (m.scorers) await setScorers(client, id, m.scorers);
         await client.query("COMMIT");
@@ -358,4 +385,4 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
   return router;
 }
 
-module.exports = { createAdminRouter };
+module.exports = { createAdminRouter, parseMatch };
