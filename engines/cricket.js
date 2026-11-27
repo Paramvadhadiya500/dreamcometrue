@@ -2,6 +2,7 @@
 // Pure functions: the same events always give the same result. No sockets, no database.
 //
 // Events this engine understands (undo is handled by the server before events reach here):
+//   toss         data = { winner: A|B, choice: bat|bowl }   recorded by the scorer before the first ball
 //   ball         data = { runs, extra, wicket }   one delivery (see parseBall below)
 //   end_innings  the scorer ends the current innings early
 //   finish       the scorer abandons the match (no result)
@@ -83,6 +84,17 @@ function parseBall(data) {
 
   return { ball: { runs, extra, wicket } };
 }
+
+// ---------- the toss ----------
+// data = { winner: "A" | "B", choice: "bat" | "bowl" }. Returns { toss } or { error }.
+function parseToss(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return { error: "bad toss" };
+  if (data.winner !== "A" && data.winner !== "B") return { error: "bad toss" };
+  if (data.choice !== "bat" && data.choice !== "bowl") return { error: "bad toss" };
+  return { toss: { winner: data.winner, choice: data.choice } };
+}
+
+const other = (team) => (team === "A" ? "B" : "A");
 
 // ---------- innings bookkeeping ----------
 function newInnings(battingTeam) {
@@ -184,8 +196,19 @@ function publicInnings(inn) {
 // ---------- the main function ----------
 function compute(events, match) {
   const cfg = normalizeConfig(match && match.config);
-  const first = cfg.firstBatting;
-  const second = first === "A" ? "B" : "A";
+
+  // the toss (the first one, before any ball) decides who bats first; old matches without a toss use the setting
+  let toss = null;
+  let played = false;                                  // a ball or "end innings" was recorded
+  for (const e of events) {
+    if (e.type === "ball" || e.type === "end_innings") { played = true; break; }
+    if (e.type === "toss") {
+      const t = parseToss(e.data);
+      if (!t.error) { toss = t.toss; break; }
+    }
+  }
+  const first = toss ? (toss.choice === "bat" ? toss.winner : other(toss.winner)) : cfg.firstBatting;
+  const second = other(first);
   const maxWickets = cfg.players - 1;
 
   const innings = [newInnings(first), newInnings(second)];
@@ -266,6 +289,8 @@ function compute(events, match) {
     status: over ? "finished" : "live",
     winner,
     resultText,
+    toss,                                             // { winner, choice } or null
+    needsToss: !toss && !played && !over,             // true = the scorer must record the toss before the first ball
   };
 }
 
@@ -273,6 +298,16 @@ function compute(events, match) {
 // Returns an error text, or null if the action is allowed. (Undo is handled by the server.)
 function validate(action, state) {
   if (state.status === "finished") return "match already finished";
+
+  if (action.type === "toss") {
+    const t = parseToss(action.data);
+    if (t.error) return t.error;
+    if (!state.needsToss) return "toss already recorded";      // also: no toss in the middle of an old match
+    return null;
+  }
+
+  // nothing is bowled before the toss (abandon is still allowed, e.g. rain before the toss)
+  if ((action.type === "ball" || action.type === "end_innings") && state.needsToss) return "record the toss first";
 
   if (action.type === "ball") {
     const p = parseBall(action.data);
@@ -293,8 +328,12 @@ function validate(action, state) {
   return "unknown action";
 }
 
-// The cleaned copy of the ball details that is saved in the database (never the raw input).
+// The cleaned copy of the ball or toss details that is saved in the database (never the raw input).
 function clean(action) {
+  if (action.type === "toss") {
+    const t = parseToss(action.data);
+    return t.error ? null : t.toss;
+  }
   if (action.type !== "ball") return null;
   const p = parseBall(action.data);
   return p.error ? null : p.ball;
@@ -319,14 +358,21 @@ function result(state) {
   };
 }
 
+// "CSE won the toss and chose to bat". names = { A: "...", B: "..." }
+function tossText(toss, names) {
+  return names[toss.winner] + " won the toss and chose to " + toss.choice;
+}
+
 // One line for the match lists. names = { A: "...", B: "..." }
 function headline(state, names) {
   const cur = state.innings[state.inning - 1];
   const part = (inn) => names[inn.battingTeam] + " " + inn.runs + "/" + inn.wickets;
+  if (state.needsToss) return "Waiting for the toss";
+  if (state.toss && state.inning === 1 && cur.recent.length === 0) return tossText(state.toss, names);
   if (state.inning === 1) return part(cur) + " (" + cur.overs + " ov)";
   let text = part(state.innings[0]) + ", " + part(cur) + " (" + cur.overs + " ov)";
   if (state.status !== "finished" && state.need !== null) text += ", need " + state.need + " from " + state.ballsLeft + " balls";
   return text;
 }
 
-module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall, result, headline, collegeOvers, COLLEGE_OVERS };
+module.exports = { compute, validate, clean, checkConfig, normalizeConfig, parseBall, parseToss, tossText, result, headline, collegeOvers, COLLEGE_OVERS };

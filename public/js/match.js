@@ -100,6 +100,14 @@ function showCricket(s) {
   $("crExtras").textContent = "Extras: " + ci.extras.total +
     " (wides " + ci.extras.wides + ", no balls " + ci.extras.noBalls +
     ", byes " + ci.extras.byes + ", leg byes " + ci.extras.legByes + ")";
+
+  // the toss: "Waiting for the toss" before it, then who won it and what they chose
+  $("crToss").textContent = MatchLogic.tossLine(s);
+  if (s.needsToss) {
+    setNum("crBig", teamName(s, "A") + " vs " + teamName(s, "B"));
+    $("crOvers").textContent = s.maxOvers + " overs per innings";
+    $("crExtras").textContent = "";
+  }
 }
 
 socket.on("score:update", (s) => {

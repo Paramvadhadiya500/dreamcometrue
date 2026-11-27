@@ -31,6 +31,11 @@
   .alarm, .note { padding: 8px 10px; margin: 6px 0; border-radius: 4px; }
   .note { background: #def; }
   .alarm button, .note button { font-size: 16px; padding: 10px 14px; margin: 6px 6px 0 0; }
+  /* cricket toss (before the first ball) */
+  #crToss { padding: 0 6px; }
+  #crToss .q { font-size: 18px; font-weight: bold; margin: 10px 6px 0; }
+  #crToss button.on { background: #fc6; border: 3px solid #c80; }
+  #tossStart { width: 92%; background: #cfc; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -105,6 +110,18 @@
       <button id="sB1" class="names" onclick="act('point','B',1)">B +1</button><button id="sB2" class="names" onclick="act('point','B',2)">B +2</button><button id="sB3" class="names" onclick="act('point','B',3)">B +3</button>
     </div>
     <button id="finish" onclick="finishMatch()">FINISH MATCH</button>
+  </div>
+
+  <div id="crToss" style="display:none">
+    <div class="q">Toss: who won it?</div>
+    <button class="big names" id="tossA" onclick="pickToss('winner','A')">Team A</button><button class="big names" id="tossB" onclick="pickToss('winner','B')">Team B</button>
+    <div class="q">They chose to</div>
+    <button class="big" id="tossBat" onclick="pickToss('choice','bat')">Bat</button><button class="big" id="tossBowl" onclick="pickToss('choice','bowl')">Bowl</button>
+    <div id="tossSummary" class="hint"></div>
+    <button id="tossStart" onclick="startMatch()" disabled>Start match</button>
+    <div>
+      <button class="small" onclick="abandonMatch()">Abandon match</button>
+    </div>
   </div>
 
   <div id="crControls" style="display:none">
@@ -276,6 +293,7 @@
       else if (x.type === "undo") t = "UNDO";
       else if (x.type === "finish") t = "Finish match" + (x.data && x.data.winner ? " (team " + x.data.winner + " wins)" : "");
       else if (x.type === "end_innings") t = "End innings";
+      else if (x.type === "toss" && x.data) t = "Toss: team " + x.data.winner + " won, chose to " + x.data.choice;
       else t = String(x.type);
     } catch (e) { t = String(x.type); }
     return (m ? m.name + ": " : "") + t;
@@ -392,6 +410,42 @@
     box.style.display = "block";
   }
 
+  // ---------- the toss (before the first ball; the server refuses balls until it is recorded) ----------
+  let tossPick = { winner: null, choice: null };
+
+  function tossSentence(s, winner, choice) {
+    const bats = choice === "bat" ? winner : (winner === "A" ? "B" : "A");
+    return teamName(s, winner) + " won the toss and chose to " + choice + ". " + teamName(s, bats) + " bats first.";
+  }
+
+  // true while a toss for this match waits on this phone (offline): the scorer may go on, the queue sends it first
+  function tossWaiting(matchId) {
+    return !!session && q.pending(session.username).some((x) => x.matchId === matchId && x.type === "toss");
+  }
+
+  function pickToss(key, value) {
+    tossPick[key] = value;
+    updateTossUI();
+  }
+
+  function updateTossUI() {
+    $("tossA").className = "big names" + (tossPick.winner === "A" ? " on" : "");
+    $("tossB").className = "big names" + (tossPick.winner === "B" ? " on" : "");
+    $("tossBat").className = "big" + (tossPick.choice === "bat" ? " on" : "");
+    $("tossBowl").className = "big" + (tossPick.choice === "bowl" ? " on" : "");
+    const ready = !!(tossPick.winner && tossPick.choice && lastState);
+    $("tossStart").disabled = !ready;
+    $("tossSummary").textContent = ready ? tossSentence(lastState, tossPick.winner, tossPick.choice) : "";
+  }
+
+  function startMatch() {
+    if (!lastState || !tossPick.winner || !tossPick.choice) return;
+    if (!confirm(tossSentence(lastState, tossPick.winner, tossPick.choice) + "\nCorrect? (UNDO can take it back before the first ball.)")) return;
+    act("toss", undefined, undefined, { winner: tossPick.winner, choice: tossPick.choice });
+    tossPick = { winner: null, choice: null };
+    showState(lastState);                       // ball buttons at once, without waiting for the server
+  }
+
   function endInnings() {
     if (confirm("End this innings now?")) act("end_innings");
   }
@@ -414,7 +468,7 @@
     $("crChase").textContent = chase;
     $("crFirst").textContent = s.inning === 2
       ? teamName(s, first.battingTeam) + " batted: " + first.runs + "/" + first.wickets + " (" + first.overs + " overs)"
-      : "";
+      : s.toss ? tossSentence(s, s.toss.winner, s.toss.choice) : "";
     $("crOver").textContent = ci.recent.join("  ");
     $("crFree").style.display = s.freeHit ? "block" : "none";
     updateCricketUI();
@@ -501,7 +555,10 @@
     $("crView").style.display = isCR ? "block" : "none";
     $("ttControls").style.display = isTT || isVB ? "block" : "none";
     $("simpleControls").style.display = isSimple ? "block" : "none";
-    $("crControls").style.display = isCR && s.status !== "finished" ? "block" : "none";
+    const needToss = isCR && s.status !== "finished" && !!s.needsToss && !tossWaiting(s.matchId);
+    if (needToss && $("crToss").style.display !== "block") tossPick = { winner: null, choice: null };   // a fresh box
+    $("crToss").style.display = needToss ? "block" : "none";
+    $("crControls").style.display = isCR && s.status !== "finished" && !needToss ? "block" : "none";
     $("undoRow").style.display = "block";
 
     const nameA = teamName(s, "A");
@@ -524,6 +581,13 @@
       }
     } else if (isCR) {
       showCricket(s);
+      if (needToss) {
+        $("tossA").textContent = shortName(nameA);
+        $("tossB").textContent = shortName(nameB);
+        $("crBig").textContent = nameA + " vs " + nameB;
+        $("crOvers").textContent = s.maxOvers + " overs per innings. Record the toss to start.";
+        updateTossUI();
+      }
     } else {
       $("simpleNames").textContent = nameA + " vs " + nameB;
       for (const n of [1, 2, 3]) {
@@ -537,7 +601,7 @@
   }
 
   function hideAllViews() {
-    for (const id of ["ttView", "simpleView", "crView", "ttControls", "simpleControls", "crControls", "undoRow"]) {
+    for (const id of ["ttView", "simpleView", "crView", "ttControls", "simpleControls", "crToss", "crControls", "undoRow"]) {
       $(id).style.display = "none";
     }
   }
@@ -585,6 +649,7 @@
     hideAllViews();
     mode = null;
     lastState = null;
+    tossPick = { winner: null, choice: null };
     $("crLast").textContent = "";
     $("name").textContent = "Loading...";
     join();

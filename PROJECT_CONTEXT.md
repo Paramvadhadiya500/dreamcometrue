@@ -40,7 +40,7 @@ engine.js            table tennis rules + effectivePoints() (undo handling)
 engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball
 engines/tableTennis.js, simple.js, cricket.js, volleyball.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql
 categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
@@ -91,8 +91,8 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   Rules: game to 11, win by 2, best of 3 (or 5, 7).
 - simple (any other sport): actions `point{team, value 1-10}`, `finish`, `undo`. State: scoreA, scoreB, status, winner (A, B or "draw").
 - cricket (college rule, engines/cricket.js collegeOvers: Boys and Male Faculty 12 overs, Semi Final/Final 14; Girls 10, Semi Final/Final 12; only these 3 categories; the admin form fills it and can change it)
-  (settings in matches.config: overs 1-50, players 2-11, firstBatting A|B, freeHit true|false):
-  actions `ball{data:{runs 0-6, extra null|wide|noball|bye|legbye, wicket null|{kind}}}`, `end_innings`, `finish` (abandon), `undo`.
+  (settings in matches.config: overs 1-50, players 2-11, firstBatting A|B (only for old matches without a toss; the admin form no longer shows it), freeHit true|false):
+  actions `toss{data:{winner A|B, choice bat|bowl}}` (scorer, before the first ball; balls are refused until then; state.needsToss / state.toss), `ball{data:{runs 0-6, extra null|wide|noball|bye|legbye, wicket null|{kind}}}`, `end_innings`, `finish` (abandon), `undo`.
   Wide: runs = EXTRA runs (+1 penalty added by the engine). No ball: runs = bat runs (+1 penalty), next ball is a free hit (only run out).
   Bye/legbye: runs >= 1, legal ball. Wicket kinds: bowled, caught, lbw, stumped, runout, hitwicket. Max wickets = players - 1.
   Innings ends: all out, overs complete, target reached, or scorer ends it. Result text: "Team B won by 3 wickets", "... by 5 runs", tie, abandoned.
@@ -111,7 +111,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 - matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
-  type in: point, undo, finish, ball, end_innings
+  type in: point, undo, finish, ball, end_innings, toss
 - schema_migrations(name PK, applied_at)
 Rules: NEVER edit a migration that was already applied. Add a new numbered file (004_...sql). Write migrations so they can run twice (IF NOT EXISTS).
 

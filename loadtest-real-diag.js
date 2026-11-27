@@ -269,7 +269,7 @@ function runWorker() {
 
   function runScorer(m, token, i) {
     const socket = io(cfg.url, { forceNew: true, auth: { token }, transports: ["websocket"], rejectUnauthorized: !cfg.insecure });
-    let n = 0, freeHit = false, finished = false, busy = false;
+    let n = 0, freeHit = false, finished = false, busy = false, needsToss = true;   // cricket: toss before the first ball
     const sendNext = () => {
       if (stopping) return;
       if (!socket.connected || busy) return;
@@ -277,6 +277,7 @@ function runWorker() {
       let msg;
       const id = "lt" + i + "-" + Date.now().toString(36) + "-" + (n++);
       if (finished) msg = { id, matchId: m.id, type: "undo" };
+      else if (needsToss) msg = { id, matchId: m.id, type: "toss", data: { winner: "A", choice: "bat" } };
       else {
         const r = Math.random();
         let data;
@@ -291,9 +292,10 @@ function runWorker() {
         busy = false;
         if (err || !ack) { S.ackErrors++; return; }
         pushSample(S.ack, Date.now() - t0, 4000);
-        if (!ack.ok) { S.rejected++; if (ack.retry) return; }
+        if (!ack.ok) { S.rejected++; if (ack.retry) return; if (msg.type === "toss") needsToss = false; }   // toss already recorded (rerun)
         if (ack.state) {
           freeHit = !!ack.state.freeHit;
+          needsToss = !!ack.state.needsToss;
           finished = ack.state.status === "finished";
           noteSent(m.id, ack.state.version, t0);
         }

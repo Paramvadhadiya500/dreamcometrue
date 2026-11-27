@@ -208,5 +208,71 @@ const blockedTest = (async () => {
   assert.strictEqual(JSON.parse(w.store["scorer-queue"]).length, 500);
   ok("50+ warning; 500 = new tap refused with a message, nothing dropped");
 }
+// ---- 9. cricket toss: the toss box comes first, ball buttons after; undo brings the box back; offline ----
+{
+  const cricket = require("./engines/cricket");
+  const { effectivePoints } = require("./engine");
+  let version = 0;
+  const crState = (events) => ({ matchId: "m1", name: "Match 1", sport: "cricket", teamA: "CSE", teamB: "ECE",
+    ...cricket.compute(effectivePoints(events), { config: { overs: 12, players: 11 } }), version: ++version });
+  const tossEv = { type: "toss", data: { winner: "B", choice: "bowl" } };
+  const shown = (w, id) => w.el(id).style.display === "block";
+
+  const w = makeWorld({ preset: { "scorer-session": session } });
+  w.connect();
+  w.ctx.showState(crState([]));
+  assert.ok(shown(w, "crToss"), "before the toss: the toss box shows");
+  assert.ok(!shown(w, "crControls"), "before the toss: no ball buttons");
+  assert.strictEqual(w.el("tossA").textContent, "CSE");
+  assert.strictEqual(w.el("tossB").textContent, "ECE");
+  assert.strictEqual(w.el("tossStart").disabled, true, "Start needs a winner and a choice");
+  w.ctx.pickToss("winner", "B");
+  assert.strictEqual(w.el("tossStart").disabled, true);
+  w.ctx.pickToss("choice", "bowl");
+  assert.strictEqual(w.el("tossStart").disabled, false);
+  assert.strictEqual(w.el("tossSummary").textContent, "ECE won the toss and chose to bowl. CSE bats first.");
+
+  w.setConfirm(false); w.ctx.startMatch();
+  assert.strictEqual(w.sent.length, 0, "Cancel in the confirm box sends nothing");
+  assert.ok(shown(w, "crToss"));
+  w.setConfirm(true); w.ctx.startMatch();
+  assert.ok(w.confirms.at(-1).startsWith("ECE won the toss and chose to bowl. CSE bats first."));
+  assert.strictEqual(w.sent.length, 1);
+  // compared as JSON: objects made inside the page's vm context have another Object prototype
+  assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.data]), JSON.stringify(["toss", { winner: "B", choice: "bowl" }]));
+  assert.ok(!shown(w, "crToss") && shown(w, "crControls"), "right after Start: ball buttons, without waiting for the server");
+  w.ack({ ok: true });
+  w.ctx.showState(crState([tossEv]));
+  assert.ok(!shown(w, "crToss") && shown(w, "crControls"), "server confirms the toss: ball buttons stay");
+  assert.ok(w.el("crBig").textContent.startsWith("CSE 0/0"), "CSE bats first");
+
+  // UNDO of the toss: the server says a toss is needed again -> the box comes back, empty
+  w.ctx.showState(crState([tossEv, { type: "undo" }]));
+  assert.ok(shown(w, "crToss") && !shown(w, "crControls"), "toss undone: the toss box is back");
+  assert.strictEqual(w.el("tossStart").disabled, true, "the old choice is not kept");
+
+  // abandoned before the toss: neither box
+  w.ctx.showState(crState([{ type: "finish" }]));
+  assert.ok(!shown(w, "crToss") && !shown(w, "crControls"), "finished: no toss box, no ball buttons");
+  ok("cricket toss: box first, confirm, ball buttons after, undo brings it back");
+
+  // offline: the toss waits on the phone, but the scorer can go on (the queue sends it before the balls)
+  const w2 = makeWorld({ preset: { "scorer-session": session } });
+  w2.connect();
+  w2.ctx.showState(crState([]));
+  w2.disconnect();
+  w2.ctx.pickToss("winner", "A"); w2.ctx.pickToss("choice", "bat"); w2.ctx.startMatch();
+  assert.strictEqual(w2.sent.length, 0, "offline: nothing sent yet");
+  assert.ok(!shown(w2, "crToss") && shown(w2, "crControls"), "offline: ball buttons anyway");
+  w2.ctx.recordBall(4);
+  const w3 = makeWorld({ preset: { ...w2.store } });           // reload while still offline
+  w3.connect();
+  assert.strictEqual(w3.sent[0].payload.type, "toss", "the toss is sent first");
+  w3.ctx.showState(crState([]));                               // the server has not got it yet
+  assert.ok(!shown(w3, "crToss"), "after reload: the waiting toss still counts");
+  assert.ok(w3.ctx.entryText({ matchId: "m1", type: "toss", data: { winner: "A", choice: "bat" } }).endsWith("Toss: team A won, chose to bat"));
+  ok("offline toss: waits in order before the balls; reload keeps it");
+}
+
 await blockedTest;
 };

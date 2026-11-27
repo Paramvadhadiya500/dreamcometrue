@@ -26,6 +26,9 @@ const states = {
     ...[4, 1, 0, 6, 2, 1, 0, 4, 1, 1, 0, 2].map((r) => ball(r)),                             // innings 1: 2 overs, 22 runs
     ball(1), ball(0, null, "bowled"), ball(1, "noball"),                                      // innings 2: a wicket, then a no ball
   ], { config: { overs: 2, players: 4, firstBatting: "A", freeHit: true } }),
+  cricketBeforeToss: () => stateFor("cricket", [], { config: { overs: 12, players: 11 } }),
+  cricketAfterToss: () => stateFor("cricket", [{ type: "toss", data: { winner: "B", choice: "bowl" } }, ball(4)],
+    { config: { overs: 12, players: 11 } }),                                                 // ECE won, bowls: CSE bats
 };
 
 async function showState(page, state) {

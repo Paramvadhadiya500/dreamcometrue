@@ -9,9 +9,12 @@
   function scoreSentence(s) {
     var A = teamName(s, "A"), B = teamName(s, "B");
     var text;
-    if (s.sport === "cricket") {
+    if (s.sport === "cricket" && s.needsToss) {
+      text = A + " against " + B + ". Waiting for the toss.";
+    } else if (s.sport === "cricket") {
       var ci = s.innings[s.inning - 1];
       text = teamName(s, ci.battingTeam) + " " + ci.runs + " for " + ci.wickets + " after " + ci.overs + " overs.";
+      if (s.toss && s.inning === 1 && ci.recent.length === 0) text = tossLine(s) + ". " + text;   // before the first ball
       if (s.inning === 2 && s.status !== "finished") text += " Need " + s.need + " from " + s.ballsLeft + " balls.";
       if (s.freeHit) text += " Free hit.";
     } else if (s.sport === "table_tennis") {
@@ -70,7 +73,14 @@
     return "Reconnecting..." + age;
   }
 
-  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText };
+  // Cricket toss line: "Waiting for the toss", "ECE won the toss and chose to bowl", or "" (old match without a toss).
+  function tossLine(s) {
+    if (s.needsToss) return "Waiting for the toss";
+    if (!s.toss) return "";
+    return teamName(s, s.toss.winner) + " won the toss and chose to " + s.toss.choice;
+  }
+
+  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText, tossLine: tossLine };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MatchLogic = api;
 })(this);

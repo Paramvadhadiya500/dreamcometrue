@@ -227,7 +227,6 @@ function openForm(m) {
   const c = m && m.sport === "cricket" ? m.config : { overs: 12, players: 11, firstBatting: "A", freeHit: true };
   $("fOvers").value = c.overs;
   $("fPlayers").value = c.players;
-  $("fFirst").value = c.firstBatting;
   $("fFree").value = String(c.freeHit);
   $("fBest").value = String(m ? m.bestOf : 3);
   $("fVbBest").value = String(m && m.sport === "volleyball" ? m.config.bestOf : 3);
@@ -235,7 +234,7 @@ function openForm(m) {
 
   const locked = !!(m && m.events > 0);
   $("lockNote").style.display = locked ? "block" : "none";
-  for (const id of ["fSport", "fOvers", "fPlayers", "fFirst", "fFree", "fBest", "fVbBest"]) $(id).disabled = locked;
+  for (const id of ["fSport", "fOvers", "fPlayers", "fFree", "fBest", "fVbBest"]) $(id).disabled = locked;
   showOversHint();                     // an existing match keeps its saved overs; only the hint is shown
 
   const box = $("fScorers");
@@ -279,7 +278,9 @@ function readForm() {
     body.config = {
       overs: parseInt($("fOvers").value, 10),
       players: parseInt($("fPlayers").value, 10),
-      firstBatting: $("fFirst").value,
+      // who bats first comes from the toss (recorded by the scorer); "A" is only the fallback for old matches.
+      // An existing match keeps its saved value, so editing it never changes its settings.
+      firstBatting: editingId ? (overview.matches.find((x) => x.id === editingId) || { config: {} }).config.firstBatting || "A" : "A",
       freeHit: $("fFree").value === "true",
     };
   }

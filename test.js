@@ -91,6 +91,7 @@ const ball = (runs = 0, extra = null, wicket = null) => ({ type: "ball", data: {
 const balls = (n, runs = 0) => Array(n).fill(0).map(() => ball(runs));
 const endInn = { type: "end_innings" };
 const abandon = { type: "finish" };
+const toss = (winner, choice) => ({ type: "toss", data: { winner, choice } });
 const run = (events, o) => cricket.compute(effectivePoints(events), cfg(o));
 
 // ---- basic scoring and overs ----
@@ -217,8 +218,8 @@ assert.strictEqual(c.winner, null);
 assert.strictEqual(c.resultText, "Match abandoned (no result)");
 assert.strictEqual(run([abandon, ball(6)]).innings[0].runs, 0);
 
-// ---- end innings needs at least one ball ----
-c = run([]);
+// ---- end innings needs at least one ball (after the toss) ----
+c = run([toss("A", "bat")]);
 assert.strictEqual(cricket.validate({ type: "end_innings" }, c), "no balls bowled in this innings yet");
 c = run([ball(1)]);
 assert.strictEqual(cricket.validate({ type: "end_innings" }, c), null);
@@ -325,6 +326,74 @@ assert.deepStrictEqual(cricket.normalizeConfig({ overs: 5, hack: 1 }), { overs: 
   }
 }
 
+// ---- the toss: the scorer records it before the first ball ----
+{
+  // before the toss: nothing but the toss (or abandon) is allowed
+  let s = run([]);
+  assert.strictEqual(s.needsToss, true);
+  assert.strictEqual(s.toss, null);
+  assert.strictEqual(cricket.validate(ball(1), s), "record the toss first");
+  assert.strictEqual(cricket.validate(endInn, s), "record the toss first");
+  assert.strictEqual(cricket.validate(abandon, s), null, "rain before the toss: abandon still works");
+  assert.strictEqual(cricket.validate(toss("A", "bat"), s), null);
+  // bad toss data is refused
+  for (const data of [null, {}, { winner: "C", choice: "bat" }, { winner: "A", choice: "field" }, { winner: "A" }, [1], "A"]) {
+    assert.strictEqual(cricket.validate({ type: "toss", data }, s), "bad toss", "refused: " + JSON.stringify(data));
+  }
+
+  // winner + choice decide who bats first (the admin setting firstBatting is not used then)
+  const cases = [["A", "bat", "A"], ["A", "bowl", "B"], ["B", "bat", "B"], ["B", "bowl", "A"]];
+  for (const [winner, choice, bats] of cases) {
+    for (const adminFirst of ["A", "B"]) {
+      s = run([toss(winner, choice), ball(4)], { firstBatting: adminFirst });
+      assert.strictEqual(s.innings[0].battingTeam, bats, winner + " won, chose to " + choice + ": " + bats + " bats first");
+      assert.strictEqual(s.innings[1].battingTeam, bats === "A" ? "B" : "A");
+      assert.deepStrictEqual(s.toss, { winner, choice });
+      assert.strictEqual(s.needsToss, false);
+    }
+  }
+  // B won and chose to bowl: A bats first and the result names the right team
+  s = run([toss("B", "bowl"), ...balls(12, 1), ...balls(12, 0)]);
+  assert.strictEqual(s.resultText, "Team A won by 12 runs");
+
+  // after the toss: balls are allowed, a second toss is not
+  s = run([toss("A", "bowl")]);
+  assert.strictEqual(s.needsToss, false);
+  assert.strictEqual(s.status, "live");
+  assert.strictEqual(cricket.validate(ball(1), s), null);
+  assert.strictEqual(cricket.validate(toss("B", "bat"), s), "toss already recorded");
+  assert.strictEqual(cricket.validate(toss("B", "bat"), run([toss("A", "bowl"), ball(1)])), "toss already recorded");
+
+  // undo takes the toss back: the toss is needed again
+  s = run([toss("A", "bat"), { type: "undo" }]);
+  assert.strictEqual(s.needsToss, true);
+  assert.strictEqual(s.toss, null);
+  s = run([toss("A", "bat"), { type: "undo" }, toss("B", "bat"), ball(2)]);
+  assert.strictEqual(s.innings[0].battingTeam, "B", "the corrected toss counts");
+
+  // an OLD match (balls but no toss, from before this change) keeps working with the admin setting
+  s = run([ball(1), ball(2)], { firstBatting: "B" });
+  assert.strictEqual(s.needsToss, false);
+  assert.strictEqual(s.innings[0].battingTeam, "B");
+  assert.strictEqual(cricket.validate(ball(1), s), null);
+  assert.strictEqual(cricket.validate(toss("A", "bat"), s), "toss already recorded", "no toss in the middle of a match");
+
+  // abandoned before the toss: finished, no toss needed any more
+  s = run([abandon]);
+  assert.strictEqual(s.status, "finished");
+  assert.strictEqual(s.needsToss, false);
+
+  // the stored copy is cleaned (extra fields dropped)
+  assert.deepStrictEqual(cricket.clean({ type: "toss", data: { winner: "B", choice: "bowl", hack: 1 } }), { winner: "B", choice: "bowl" });
+  assert.strictEqual(cricket.clean({ type: "toss", data: { winner: "X" } }), null);
+
+  // headline for the match lists
+  const names = { A: "CSE", B: "ECE" };
+  assert.strictEqual(cricket.headline(run([]), names), "Waiting for the toss");
+  assert.strictEqual(cricket.headline(run([toss("B", "bowl")]), names), "ECE won the toss and chose to bowl");
+  assert.strictEqual(cricket.headline(run([toss("B", "bowl"), ball(4)]), names), "CSE 4/0 (0.1 ov)");
+}
+
 // ---- random matches: 400 full games, checking the arithmetic independently ----
 function rng(seed) {
   return function () {
@@ -343,7 +412,7 @@ let finishedGames = 0, validBalls = 0, rejectedBalls = 0;
 for (let g = 0; g < 400; g++) {
   const o = { overs: 1 + Math.floor(rand() * 3), players: 2 + Math.floor(rand() * 4), firstBatting: pick(["A", "B"]), freeHit: rand() < 0.5 };
   const maxW = o.players - 1;
-  const events = [];
+  const events = [toss(pick(["A", "B"]), pick(["bat", "bowl"]))];     // every real match starts with the toss
   for (let step = 0; step < 400; step++) {
     const before = run(events, o);
     const r = rand();
@@ -840,6 +909,16 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual(q.add(E("a1"), "rahul"), { ok: true });
   q.add(E("a2"), "rahul");
   assert.strictEqual(q.status("rahul").waiting, 2);
+  // pending(): this user's waiting entries, as copies (the scorer page checks for a waiting toss)
+  {
+    const q2 = createQueue({ storage: memStore(), now: () => 1 });
+    q2.add(E("t1", { type: "toss", matchId: "m2" }), "rahul");
+    q2.add(E("t2"), "neha");
+    assert.deepStrictEqual(q2.pending("rahul"), [{ matchId: "m2", type: "toss" }]);
+    assert.deepStrictEqual(q2.pending("neha"), [{ matchId: "m1", type: "point" }]);
+    q2.pending("rahul")[0].type = "changed";
+    assert.strictEqual(q2.pending("rahul")[0].type, "toss", "a copy: changing it does not change the queue");
+  }
   assert.deepStrictEqual(Object.keys(q.payload(q.head("rahul"))).sort(), ["data", "id", "matchId", "team", "type", "value"],
     "only the fields the server knows are sent");
 
@@ -995,6 +1074,16 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual([h3[7].text, h3[7].after], ["UNDO (cancels: Dot ball + WICKET (Caught))", "CSE 10/0 (0.3 ov)"]);
   assert.deepStrictEqual([h3[8].text, h3[9].text, h3[10].text], ["2 byes", "1 run", "End innings"]);
 
+  // cricket toss: in words, its undo, and the corrected toss decides who bats
+  const hT = bySeq(hist("cricket", [
+    { type: "toss", data: { winner: "A", choice: "bat" } }, { type: "undo" },
+    { type: "toss", data: { winner: "B", choice: "bowl" } }, b(4),
+  ], { config: { overs: 2, players: 4 } }));
+  assert.deepStrictEqual([hT[1].text, hT[1].after, hT[1].undone], ["Toss: CSE won, chose to bat", "CSE won the toss and chose to bat", true]);
+  assert.deepStrictEqual([hT[2].text, hT[2].after], ["UNDO (cancels: Toss: CSE won, chose to bat)", "Waiting for the toss"]);
+  assert.deepStrictEqual([hT[3].text, hT[3].after], ["Toss: ECE won, chose to bowl", "ECE won the toss and chose to bowl"]);
+  assert.deepStrictEqual([hT[4].text, hT[4].after], ["4 runs", "CSE 4/0 (0.1 ov)"], "ECE chose to bowl, so CSE bats");
+
   // volleyball: finish with a winner (walkover)
   const h4 = hist("volleyball", [{ type: "finish", data: { winner: "B" } }], { config: { bestOf: 3 } });
   assert.deepStrictEqual([h4.rows[0].text, h4.rows[0].after], ["Finish match (ECE wins)", "ECE won (walkover), sets 0-0"]);
@@ -1081,6 +1170,18 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(scoreSentence(st("cricket", [bl(4), bl(1)], crCfg)), "CSE 5 for 0 after 0.2 overs.");
   const chase = st("cricket", [...[4, 1, 0, 6, 2, 1, 0, 4, 1, 1, 0, 2].map((r) => bl(r)), bl(1), bl(0, null, "bowled"), bl(1, "noball")], crCfg);
   assert.strictEqual(scoreSentence(chase), "ECE 3 for 1 after 0.2 overs. Need 20 from 10 balls. Free hit.");
+
+  // the toss on the match page
+  const { tossLine } = require("./public/js/match-logic");
+  const tossB = { type: "toss", data: { winner: "B", choice: "bowl" } };
+  assert.strictEqual(tossLine(st("cricket", [], crCfg)), "Waiting for the toss");
+  assert.strictEqual(scoreSentence(st("cricket", [], crCfg)), "CSE against ECE. Waiting for the toss.");
+  assert.strictEqual(tossLine(st("cricket", [tossB], crCfg)), "ECE won the toss and chose to bowl");
+  assert.strictEqual(scoreSentence(st("cricket", [tossB], crCfg)), "ECE won the toss and chose to bowl. CSE 0 for 0 after 0.0 overs.");
+  assert.strictEqual(tossLine(st("cricket", [tossB, bl(4)], crCfg)), "ECE won the toss and chose to bowl", "the line stays during the match");
+  assert.strictEqual(scoreSentence(st("cricket", [tossB, bl(4)], crCfg)), "CSE 4 for 0 after 0.1 overs.", "after the first ball: score only");
+  assert.strictEqual(tossLine(st("cricket", [bl(4)], crCfg)), "", "old match without a toss: no line");
+  assert.strictEqual(tossLine({ ...st("cricket", [tossB], crCfg), teamA: "", teamB: "" }), "Team B won the toss and chose to bowl");
 
   // the throttle, with a fake clock: at most one sentence per 8 s, the newest wins
   let clock = 0, timers = [];

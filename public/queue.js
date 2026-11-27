@@ -80,6 +80,13 @@
         return i < 0 ? null : items[i];
       },
 
+      // this user's waiting entries, oldest first (copies: { matchId, type }). Read only.
+      // The scorer page uses it to see if a toss is still on its way to the server.
+      pending: function (user) {
+        return items.filter(function (it) { return mine(it, user); })
+          .map(function (it) { return { matchId: it.matchId, type: it.type }; });
+      },
+
       // what goes over the network: only the fields the server knows
       payload: function (item) {
         return { id: item.id, matchId: item.matchId, type: item.type, team: item.team, value: item.value, data: item.data };

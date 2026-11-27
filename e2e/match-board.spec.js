@@ -55,6 +55,17 @@ test("cricket: batting score big, overs, chase, free hit; no names-beside-score 
   await expect(page.locator("#duel")).toBeHidden();
 });
 
+test("cricket toss: 'Waiting for the toss' first, then who won it; the right team bats", async ({ page }) => {
+  await show(page, states.cricketBeforeToss());
+  await expect(page.locator("#crToss")).toHaveText("Waiting for the toss");
+  await expect(page.locator("#crBig")).toHaveText("CSE vs ECE");
+  await expect(page.locator("#crOvers")).toHaveText("12 overs per innings");
+  await show(page, states.cricketAfterToss());
+  await expect(page.locator("#crToss")).toHaveText("ECE won the toss and chose to bowl");
+  await expect(page.locator("#crBig")).toHaveText("CSE 4/0");
+  await expect(page.locator("#crOvers")).toContainText("0.1 / 12 overs");
+});
+
 test("360 px phone: long team names and big scores never scroll sideways", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   const long = stateFor("simple", [point("A", 10), point("B", 10), point("B", 2)],
