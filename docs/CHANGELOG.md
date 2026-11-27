@@ -9,6 +9,18 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-28 - Deployed basketball + delete-a-scorer on the server (by hand): migration 007
+- **What:** deploy of `ef727f2` (includes `47fe968` delete-a-scorer, `e184958` + `ef727f2` basketball) by the user on the server: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (007_basketball.sql), `docker compose up -d`.
+- **Checked:** `migrate.js` printed "applied 007_basketball.sql", "Database is up to date". The user reports "everything works perfect". `./scripts/security-check.sh` after the deploy: 29 passed, 0 warnings, 0 failed.
+- **NOT checked:** a full basketball match on the server with a real scorer (overtime + undo), planned before the event.
+- **Undo:** `git checkout eff3859` (the version before) or revert the commits, then `docker compose build`, `docker compose up -d`. Migration 007 can stay (it only allows one more event type).
+
+## 2026-11-28 - Basketball (e184958, ef727f2) pushed; all 4 CI jobs green
+- **What:** `git push` of `3ed627b`, `e184958`, `ef727f2` (`47fe968..ef727f2`). NOT deployed yet (the server runs `eff3859`; delete-a-scorer `47fe968` is not deployed either).
+- **Checked:** GitHub Actions run 46052598871 for `ef727f2`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API).
+- **Next (by hand, when the user decides):** deploy WITH a migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (must print "applied 007_basketball.sql"), `docker compose up -d`.
+- **Undo:** see the two basketball entries below.
+
 ## 2026-11-27 - Basketball part 2: admin form, scorer page, match page
 - **What:** `public/admin.html` + `public/js/admin.js` + `public/css/admin.css`: sport "Basketball", info box "College rule: 4 quarters of N minutes (set from the stage)" or the warning "Basketball is only for Student Boys and Student Girls"; the match list shows "4 x 7 min". `admin.js` overview sends `basketballMinutes` (the table comes from the engine, one source). `public/scorer.html`: basketball view (score, "Quarter 2 (7 min)", points per quarter) and buttons +1/+2/+3 per team, "END QUARTER n" / "END OVERTIME n" with a confirm that says when it ENDS THE MATCH (and who wins) or starts overtime, "Finish: X wins"; buttons hidden when finished (UNDO stays). `finishVolleyball` renamed `finishWithWinner` (used by volleyball and basketball). `public/js/match-logic.js`: `basketballLines()` and the screen-reader sentence; `public/js/match.js`: total score big, the quarter now below, "Q1 12-10, Q2 8-9, OT1 4-2". `PROJECT_CONTEXT.md` updated. Tests: `test-scorer-page.js` case 10, `test.js` (match-logic), `e2e/admin.spec.js` (new basketball college-rule test, sport groups), `e2e/csp.spec.js`, `e2e/match-states.js` + `e2e/match-board.spec.js` (new basketball board test).
 - **Why:** part 2 of basketball: scorers and students can use it.
