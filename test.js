@@ -935,10 +935,46 @@ const { FailureLimiter } = require("./rateLimit");
     assert.strictEqual(bb.validate(P("A", v), live), null);
     assert.strictEqual(bb.validate(P("B", v), live), null);
   }
-  for (const v of [0, 4, -1, 2.5, "2", null, undefined, true]) {
-    assert.strictEqual(bb.validate(P("A", v), live), "points must be 1, 2 or 3", "rejected value " + String(v));
+  for (const v of [0, 4, -4, 2.5, -1.5, "2", "-1", null, undefined, true]) {
+    assert.strictEqual(bb.validate(P("A", v), live), "points must be 1, 2 or 3 (or -1, -2, -3 to correct a mistake)", "rejected value " + String(v));
   }
   assert.strictEqual(bb.validate(P("C", 2), live), "bad team");
+
+  // ---- corrections: -1 / -2 / -3 take points away (in the current quarter); never below 0 for the match ----
+  assert.strictEqual(bb.validate(P("A", -1), live), null);
+  assert.strictEqual(bb.validate(P("A", -2), live), null);
+  assert.strictEqual(bb.validate(P("A", -3), live), "cannot take away 3 points: Team A has only 2");
+  assert.strictEqual(bb.validate(P("B", -1), live), "cannot take away 1 point: Team B has only 0");
+  b = run([P("A", 3), P("B", 2), P("A", -1)]);
+  assert.deepStrictEqual([b.scoreA, b.scoreB, b.currentA], [2, 2, 2], "a 3 that should have been a 2");
+  b = run([P("A", 2), END, P("B", 1), P("A", -2), P("B", 2)]);
+  assert.deepStrictEqual([b.scoreA, b.scoreB, b.currentA, b.currentB, b.periods], [0, 3, -2, 3, [[2, 0]]],
+    "a basket given to the wrong team in quarter 1, fixed in quarter 2: totals right, quarter 2 shows -2 for A");
+  b = run([P("A", 2), P("A", -2), undo]);
+  assert.strictEqual(b.scoreA, 2, "undo of a correction gives the points back");
+  // a correction can change who wins at the end of quarter 4
+  b = run([P("A", 3), P("B", 2), END, END, END, P("A", -1), END]);
+  assert.deepStrictEqual([b.status, b.period, b.isOvertime], ["live", 5, true], "corrected to 2-2: overtime");
+  assert.strictEqual(bb.validate(P("A", -1), run(done)), "match already finished");
+  // the stored copy of a bad correction is never applied (the server never stores one; compute ignores it anyway)
+  assert.strictEqual(run([P("A", 1), P("A", -3)]).scoreA, 1, "a correction below 0 is ignored by compute");
+
+  // ---- END QUARTER says which quarter it ends: a second press for the same quarter is refused ----
+  const ENDQ = (n) => ({ type: "end_period", data: { period: n } });
+  assert.strictEqual(bb.validate(ENDQ(1), run([])), null);
+  assert.strictEqual(bb.validate(ENDQ(1), run([ENDQ(1)])), "Quarter 1 has already ended");
+  assert.strictEqual(bb.validate(ENDQ(2), run([ENDQ(1)])), null);
+  assert.strictEqual(bb.validate(ENDQ(4), run(level)), "Quarter 4 has already ended", "level after quarter 4: overtime now");
+  assert.strictEqual(bb.validate(ENDQ(5), run(level)), null, "overtime 1 is period 5");
+  assert.strictEqual(bb.validate(ENDQ(5), run([...level, END])), "Overtime 1 has already ended");
+  assert.strictEqual(bb.validate(ENDQ(3), run([ENDQ(1)])), "Quarter 3 has not started yet");
+  for (const bad of [0, -1, 1.5, "1", null, true]) {
+    assert.strictEqual(bb.validate({ type: "end_period", data: { period: bad } }, live), "bad quarter number", "rejected period " + String(bad));
+  }
+  assert.strictEqual(bb.validate({ type: "end_period", data: [] }, live), null, "no quarter number (an old open page): still allowed");
+  assert.strictEqual(bb.validate({ type: "end_period", data: {} }, live), null);
+  b = run([ENDQ(1), ENDQ(2)]);
+  assert.strictEqual(b.period, 3, "the quarter number is only checked, compute ends the period as before");
   assert.strictEqual(bb.validate({ type: "point", value: 2 }, live), "bad team");
   assert.strictEqual(bb.validate(END, live), null);
   assert.strictEqual(bb.validate(END, run([])), null, "a quarter can end 0-0");
@@ -953,7 +989,10 @@ const { FailureLimiter } = require("./rateLimit");
   // ---- the cleaned copy that is stored ----
   assert.deepStrictEqual(bb.clean({ type: "finish", data: { winner: "B", junk: "x".repeat(100) } }), { winner: "B" });
   assert.strictEqual(bb.clean({ type: "finish", data: { winner: "Z" } }), null);
-  assert.strictEqual(bb.clean({ type: "end_period", data: { winner: "A" } }), null, "end_period stores no details");
+  assert.strictEqual(bb.clean({ type: "end_period", data: { winner: "A" } }), null, "end_period stores only a quarter number");
+  assert.deepStrictEqual(bb.clean({ type: "end_period", data: { period: 2, junk: "x" } }), { period: 2 });
+  assert.strictEqual(bb.clean({ type: "end_period", data: { period: "2" } }), null);
+  assert.strictEqual(bb.clean({ type: "end_period" }), null);
   assert.strictEqual(bb.clean({ type: "point", team: "A", value: 2, data: { x: 1 } }), null);
 
   // ---- match settings (minutes are shown only; there is no clock) ----
@@ -1015,7 +1054,7 @@ const { FailureLimiter } = require("./rateLimit");
 
   // ---- random matches: 400 games, invariants checked after EVERY event ----
   const br = rng(2027);
-  let bbFinished = 0, bbUndos = 0, bbOvertimes = 0;
+  let bbFinished = 0, bbUndos = 0, bbOvertimes = 0, bbFixes = 0, bbRefusedEnds = 0;
   for (let g = 0; g < 400; g++) {
     const events = [];
     const kept = [];
@@ -1024,12 +1063,30 @@ const { FailureLimiter } = require("./rateLimit");
       const x = br();
       let e;
       if (kept.length > 0 && x < 0.08) { events.push(undo); kept.pop(); bbUndos++; }
-      else {
-        e = x < 0.2 ? END : P(br() < 0.5 ? "A" : "B", 1 + Math.floor(br() * 3));
+      else if (x < 0.1) {
+        // a second press for a quarter that already ended (the old number) must be refused
+        if (state.period > 1) {
+          assert.strictEqual(typeof bb.validate(ENDQ(state.period - 1), state), "string");
+          bbRefusedEnds++;
+        }
+        continue;
+      } else if (x < 0.14) {
+        // a correction: allowed exactly when the team keeps 0 or more points
+        const t = br() < 0.5 ? "A" : "B";
+        const v = -(1 + Math.floor(br() * 3));
+        const has = t === "A" ? state.scoreA : state.scoreB;
+        const ok = bb.validate(P(t, v), state) === null;
+        assert.strictEqual(ok, has + v >= 0, "correction " + v + " with " + has + " points");
+        if (!ok) continue;
+        e = P(t, v); bbFixes++;
+        events.push(e); kept.push(e);
+      } else {
+        e = x < 0.25 ? ENDQ(state.period) : P(br() < 0.5 ? "A" : "B", 1 + Math.floor(br() * 3));
         assert.strictEqual(bb.validate(e, state), null);
         events.push(e); kept.push(e);
       }
       state = run(events);
+      assert.ok(state.scoreA >= 0 && state.scoreB >= 0, "a total is never below 0");
       assert.deepStrictEqual(state, bb.compute(kept, { config: undefined }), "undo equals a fresh replay");
       const sumA = state.periods.reduce((t, p) => t + p[0], 0) + state.currentA;
       const sumB = state.periods.reduce((t, p) => t + p[1], 0) + state.currentB;
@@ -1057,6 +1114,8 @@ const { FailureLimiter } = require("./rateLimit");
   assert.ok(bbFinished >= 390, "almost all random matches finish (" + bbFinished + ")");
   assert.ok(bbUndos > 500, "the random test really used undo");
   assert.ok(bbOvertimes > 0, "the random test really reached overtime (" + bbOvertimes + ")");
+  assert.ok(bbFixes > 300, "the random test really used corrections (" + bbFixes + ")");
+  assert.ok(bbRefusedEnds > 100, "the random test really tried old END QUARTER presses (" + bbRefusedEnds + ")");
 }
 
 // ======================= Startup guard: JWT_SECRET =======================
@@ -1295,6 +1354,12 @@ const { createQueue } = require("./public/queue");
   const hb = hist("basketball", [{ type: "point", team: "A", value: 3 }, { type: "end_period" }], { config: { quarterMinutes: 7, overtimeMinutes: 5 } });
   assert.deepStrictEqual([hb.rows[1].text, hb.rows[1].after], ["+3 for CSE", "CSE 3-0 ECE (Q1)"]);
   assert.deepStrictEqual([hb.rows[0].text, hb.rows[0].after], ["End quarter / overtime", "CSE 3-0 ECE (Q2)"]);
+  // with the quarter number (new pages), and a correction
+  const hb2 = hist("basketball", [{ type: "point", team: "A", value: 3 }, { type: "point", team: "A", value: -1 },
+    { type: "end_period", data: { period: 1 } }, { type: "end_period", data: { period: 5 } }], { config: { quarterMinutes: 7, overtimeMinutes: 5 } });
+  assert.deepStrictEqual([hb2.rows[2].text, hb2.rows[2].after], ["-1 for CSE (correction)", "CSE 2-0 ECE (Q1)"]);
+  assert.strictEqual(hb2.rows[1].text, "End Quarter 1");
+  assert.strictEqual(hb2.rows[0].text, "End Overtime 1");
 
   // table tennis: a point has no value
   const h5 =hist("table_tennis", [{ type: "point", team: "A" }]);

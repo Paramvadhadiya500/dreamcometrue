@@ -433,7 +433,7 @@ test("9b. basketball: 1/2/3 points, end_period is stored (migration 007), quarte
   let a = await act(s1, match, point("A", 3));
   assert.strictEqual(a.ok, true, JSON.stringify(a));
   a = await act(s1, match, point("B", 4));
-  assert.deepStrictEqual([a.ok, a.error], [false, "points must be 1, 2 or 3"]);
+  assert.deepStrictEqual([a.ok, a.error], [false, "points must be 1, 2 or 3 (or -1, -2, -3 to correct a mistake)"]);
   for (let q = 0; q < 3; q++) {
     a = await act(s1, match, { id: newId(), type: "end_period" });
     assert.strictEqual(a.ok, true, "end_period must be accepted by the database: " + JSON.stringify(a));

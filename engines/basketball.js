@@ -2,8 +2,12 @@
 // Pure functions: the same events always give the same result. No sockets, no database.
 //
 // Events this engine understands (undo is handled by the server before events reach here):
-//   point       team A or B scores: value 1 (free throw), 2 (basket) or 3 (basket from behind the 3-point line)
-//   end_period  the scorer ends the current quarter or overtime (there is no game clock in the app)
+//   point       team A or B scores: value 1 (free throw), 2 (basket) or 3 (basket from behind the 3-point line).
+//               value -1, -2 or -3 is a CORRECTION: takes points away (a wrong entry earlier, not the last one).
+//               It counts in the current quarter; a team's match total never goes below 0.
+//   end_period  the scorer ends the current quarter or overtime (there is no game clock in the app).
+//               data = { period: n } (the quarter the phone wants to end): refused if that one already ended,
+//               so a second press (slow network, two scorers) cannot skip a quarter. Missing = allowed (old pages).
 //   finish      the scorer ends the match early and picks the winner: data = { winner: "A" | "B" }
 //
 // A match has 4 quarters. If the score is level after quarter 4, 5-minute overtimes are played
@@ -16,6 +20,8 @@ const DEFAULT_CONFIG = { quarterMinutes: 10, overtimeMinutes: 5 };
 const isTeam = (t) => t === "A" || t === "B";
 const isObject = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const isMinutes = (m, max) => Number.isInteger(m) && m >= 1 && m <= max;
+const isPoints = (v) => v === 1 || v === 2 || v === 3 || v === -1 || v === -2 || v === -3;
+const isPeriod = (p) => Number.isInteger(p) && p >= 1;
 
 // College rule: quarter length from the stage. Semi final and final: 10 minutes, everything else: 7.
 function collegeQuarterMinutes(stage) {
@@ -55,9 +61,9 @@ function compute(events, match) {
     if (winner) break;                                        // match is over, ignore extra events
     if (e.type === "point") {
       const v = e.value;
-      if (v !== 1 && v !== 2 && v !== 3) continue;            // the server never stores a bad value
-      if (e.team === "A") { scoreA += v; currentA += v; }
-      else if (e.team === "B") { scoreB += v; currentB += v; }
+      if (!isPoints(v)) continue;                             // the server never stores a bad value
+      if (e.team === "A" && scoreA + v >= 0) { scoreA += v; currentA += v; }
+      else if (e.team === "B" && scoreB + v >= 0) { scoreB += v; currentB += v; }
     } else if (e.type === "end_period") {
       periods.push([currentA, currentB]);
       currentA = 0;
@@ -109,11 +115,23 @@ function validate(action, state) {
 
   if (action.type === "point") {
     if (!isTeam(action.team)) return "bad team";
-    if (action.value !== 1 && action.value !== 2 && action.value !== 3) return "points must be 1, 2 or 3";
+    if (!isPoints(action.value)) return "points must be 1, 2 or 3 (or -1, -2, -3 to correct a mistake)";
+    const has = action.team === "A" ? state.scoreA : state.scoreB;
+    if (has + action.value < 0) {
+      const n = -action.value;
+      return "cannot take away " + n + (n === 1 ? " point" : " points") + ": Team " + action.team + " has only " + has;
+    }
     return null;
   }
 
-  if (action.type === "end_period") return null;              // a quarter may end 0-0
+  if (action.type === "end_period") {                         // a quarter may end 0-0
+    const p = isObject(action.data) && action.data.period !== undefined ? action.data.period : undefined;
+    if (p === undefined) return null;                         // an old open page sends no number
+    if (!isPeriod(p)) return "bad quarter number";
+    if (p < state.period) return periodNameOf(p) + " has already ended";
+    if (p > state.period) return periodNameOf(p) + " has not started yet";
+    return null;
+  }
 
   if (action.type === "finish") {
     if (!isObject(action.data) || !isTeam(action.data.winner)) return "choose the winner";
@@ -125,6 +143,9 @@ function validate(action, state) {
 
 // The cleaned copy of the details that is saved in the database (never the raw input).
 function clean(action) {
+  if (action.type === "end_period") {
+    return isObject(action.data) && isPeriod(action.data.period) ? { period: action.data.period } : null;
+  }
   if (action.type !== "finish") return null;
   if (!isObject(action.data) || !isTeam(action.data.winner)) return null;
   return { winner: action.data.winner };

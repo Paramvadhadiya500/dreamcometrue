@@ -106,7 +106,10 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   NOT supported: serve/rotation, timeouts, substitutions, cards, libero, player names, points cap, "no result", editable set points in the admin form, 3-2-1-0 table points.
 - basketball (FIBA, points only; Boys and Girls only; settings in matches.config: quarterMinutes, overtimeMinutes, always set by admin.js
   from the stage: 7 min up to the quarter final, 10 min semi final / final, overtime 5; display only, no clock, not editable):
-  actions `point{team A|B, value 1|2|3}`, `end_period` (scorer ends the quarter / overtime), `finish{data:{winner A|B}}` (walkover, points stay), `undo`.
+  actions `point{team A|B, value 1|2|3}` (value -1|-2|-3 = CORRECTION, counts in the current quarter, a team total never below 0),
+  `end_period{data:{period n}}` (scorer ends quarter/overtime n; refused if n already ended, so a double press cannot skip a quarter;
+  no data = allowed for old pages), `finish{data:{winner A|B}}` (walkover, points stay), `undo`.
+  Scorer page: team name above its row, buttons only "+1 +2 +3"; "Fix a mistake" opens -1/-2/-3; the END button counts presses still waiting on the phone.
   State: scoreA/B, currentA/B, period, periodName, isOvertime, periodMinutes, periods ([a,b] per finished period), winner, ended, resultText.
   Rules: 4 quarters; level after quarter 4 or an overtime = another overtime; no draws. Points table: forA/forB = points (win 2, loss 0).
   NOT supported: game clock, fouls, timeouts, player names, FIBA 20-0 forfeit.

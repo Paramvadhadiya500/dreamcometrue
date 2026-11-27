@@ -24,7 +24,14 @@ function ballText(data) {
 }
 
 function actionText(e, names) {
+  if (e.type === "point" && Number.isInteger(e.value) && e.value < 0) {
+    return e.value + " for " + (names[e.team] || e.team) + " (correction)";             // basketball: take points away
+  }
   if (e.type === "point") return "+" + (Number.isInteger(e.value) ? e.value : 1) + " for " + (names[e.team] || e.team);
+  if (e.type === "end_period" && e.data && Number.isInteger(e.data.period) && e.data.period >= 1) {
+    const p = e.data.period;
+    return "End " + (p <= 4 ? "Quarter " + p : "Overtime " + (p - 4));
+  }
   if (e.type === "ball" && e.data) return ballText(e.data);
   if (e.type === "finish") return "Finish match" + (e.data && names[e.data.winner] ? " (" + names[e.data.winner] + " wins)" : "");
   if (e.type === "end_innings") return "End innings";

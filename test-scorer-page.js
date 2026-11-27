@@ -292,8 +292,12 @@ const blockedTest = (async () => {
   for (const id of ["ttView", "simpleView", "crView", "ttControls", "simpleControls", "crControls", "crToss"]) {
     assert.ok(!shown(w, id), "other sports hidden: " + id);
   }
-  assert.strictEqual(w.el("bbA3").textContent, "CSE +3");
-  assert.strictEqual(w.el("bbB1").textContent, "ECE +1");
+  // the number is the whole button text (never cut off); the team name is shown once above its row
+  assert.strictEqual(w.el("bbA3").textContent, "+3");
+  assert.strictEqual(w.el("bbB1").textContent, "+1");
+  assert.strictEqual(w.el("bbNameA").textContent, "CSE");
+  assert.strictEqual(w.el("bbNameB").textContent, "ECE");
+  assert.ok(!shown(w, "bbFix"), "the correction buttons are hidden until asked for");
   assert.strictEqual(w.el("bbPeriod").textContent, "Quarter 1 (7 min)");
   assert.strictEqual(w.el("bbEnd").textContent, "END QUARTER 1");
   assert.strictEqual(w.el("bbFinB").textContent, "Finish: ECE wins");
@@ -314,7 +318,10 @@ const blockedTest = (async () => {
   assert.strictEqual(w.sent.length, 0, "Cancel sends nothing");
   assert.ok(w.confirms.at(-1).startsWith("End Quarter 2?"), w.confirms.at(-1));
   w.setConfirm(true); w.ctx.endPeriod();
-  assert.strictEqual(w.sent[0].payload.type, "end_period");
+  assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.data]), JSON.stringify(["end_period", { period: 2 }]),
+    "END QUARTER says which quarter it ends");
+  assert.strictEqual(w.el("bbEnd").textContent, "END QUARTER 3", "the button moves on at once, before the server answers");
+  assert.strictEqual(w.el("bbPeriod").textContent, "Quarter 3 (7 min)");
   w.ack({ ok: true });
 
   // quarter 4, not level: the confirm says it ENDS the match and who wins
@@ -335,6 +342,42 @@ const blockedTest = (async () => {
   assert.ok(w.confirms.at(-1).includes("give the win to ECE"));
   assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.data]), JSON.stringify(["finish", { winner: "B" }]));
   w.ack({ ok: true });
+
+  // offline: END QUARTER waits on the phone; the screen counts it, so a second press ends the NEXT quarter (not the same one twice)
+  const w2 = makeWorld({ preset: { "scorer-session": session } });
+  w2.connect();
+  w2.ctx.showState(bbState([P("A", 2)]));
+  w2.disconnect();
+  w2.setConfirm(true);
+  w2.ctx.endPeriod();
+  assert.strictEqual(w2.el("bbEnd").textContent, "END QUARTER 2", "offline: the button shows the next quarter");
+  assert.ok(w2.confirms.at(-1).startsWith("End Quarter 1?"));
+  w2.ctx.endPeriod();
+  assert.ok(w2.confirms.at(-1).startsWith("End Quarter 2?"), "the second press asks about quarter 2");
+  w2.ctx.act("undo");                                             // UNDO while still offline takes the waiting END QUARTER 2 back
+  assert.strictEqual(w2.el("bbEnd").textContent, "END QUARTER 2");
+  const w3 = makeWorld({ preset: { ...w2.store } });              // reload while offline: the waiting entries still count
+  w3.ctx.showState(bbState([P("A", 2)]));
+  assert.strictEqual(w3.el("bbEnd").textContent, "END QUARTER 2");
+  w3.connect();
+  const periods = [];
+  while (w3.sent.length) { const s = w3.ack({ ok: true }); if (s.type === "end_period") periods.push(s.data.period); }
+  assert.deepStrictEqual(periods, [1, 2], "sent in order with their quarter numbers (then the UNDO)");
+
+  // corrections: hidden behind "Fix a mistake", ask first, send a negative point
+  w.ctx.showState(bbState([P("A", 3), P("B", 2)]));
+  w.ctx.toggleFix();
+  assert.ok(shown(w, "bbFix"), "Fix a mistake opens the correction buttons");
+  assert.strictEqual(w.el("bbFixA2").textContent, "-2");
+  w.setConfirm(false); w.ctx.fixPoints("A", 2);
+  assert.strictEqual(w.sent.length, 0, "Cancel sends nothing");
+  assert.ok(w.confirms.at(-1).startsWith("CORRECTION: take 2 points away from CSE?"), w.confirms.at(-1));
+  w.setConfirm(true); w.ctx.fixPoints("A", 2);
+  assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.team, w.sent[0].payload.value]), JSON.stringify(["point", "A", -2]));
+  assert.ok(!shown(w, "bbFix"), "the correction box closes after one use");
+  w.ack({ ok: true });
+  assert.ok(w.ctx.entryText({ matchId: "m1", type: "point", team: "A", value: -2 }).endsWith("-2 for team A (correction)"));
+  assert.ok(w.ctx.entryText({ matchId: "m1", type: "end_period", data: { period: 5 } }).endsWith("End Overtime 1"));
 
   // finished: no scoring buttons, UNDO stays, result shown
   w.ctx.showState(bbState([P("A", 3), END, END, END, END]));

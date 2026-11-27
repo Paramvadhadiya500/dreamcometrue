@@ -11,6 +11,13 @@
   #undo { width: 92%; background: #fdd; }
   #bbEnd { width: 92%; background: #fe9; }
   #bbControls .small { width: 45%; font-size: 15px; padding: 10px; }
+  #bbFixBtn { width: 92%; }
+  .bbTeam { font-size: 20px; font-weight: bold; margin: 8px 2% 0; padding: 4px 8px; border-radius: 4px; overflow-wrap: anywhere; }
+  .bbRow button { width: 30%; font-size: 30px; font-weight: bold; padding: 16px 0; margin: 4px 1%; }
+  .teamA { background: #dbeafe; }
+  .teamB { background: #ffe8cc; }
+  .bbRow.fix button { background: #fdd; font-size: 24px; padding: 12px 0; }
+  #bbFix { border: 2px solid #c33; border-radius: 6px; margin: 6px 2%; padding-bottom: 6px; }
   #finish { width: 92%; background: #def; }
   input { font-size: 20px; padding: 10px; width: 90%; }
   .err { color: #c33; }
@@ -110,15 +117,32 @@
     </div>
   </div>
 
-  <div id="bbControls" class="grid" style="display:none">
-    <div>
-      <button id="bbA1" class="names" onclick="act('point','A',1)">A +1</button><button id="bbA2" class="names" onclick="act('point','A',2)">A +2</button><button id="bbA3" class="names" onclick="act('point','A',3)">A +3</button>
+  <!-- basketball: the team name once above its row, the buttons show only the number (never cut off on a phone) -->
+  <div id="bbControls" style="display:none">
+    <div class="bbTeam teamA" id="bbNameA">Team A</div>
+    <div class="bbRow teamA">
+      <button id="bbA1" onclick="act('point','A',1)">+1</button><button id="bbA2" onclick="act('point','A',2)">+2</button><button id="bbA3" onclick="act('point','A',3)">+3</button>
     </div>
-    <div>
-      <button id="bbB1" class="names" onclick="act('point','B',1)">B +1</button><button id="bbB2" class="names" onclick="act('point','B',2)">B +2</button><button id="bbB3" class="names" onclick="act('point','B',3)">B +3</button>
+    <div class="bbTeam teamB" id="bbNameB">Team B</div>
+    <div class="bbRow teamB">
+      <button id="bbB1" onclick="act('point','B',1)">+1</button><button id="bbB2" onclick="act('point','B',2)">+2</button><button id="bbB3" onclick="act('point','B',3)">+3</button>
     </div>
     <div class="hint">+1 free throw, +2 basket, +3 basket from behind the 3-point line</div>
     <button id="bbEnd" onclick="endPeriod()">END QUARTER</button>
+    <div>
+      <button class="small" id="bbFixBtn" onclick="toggleFix()">Fix a mistake (take points away)</button>
+    </div>
+    <div id="bbFix" style="display:none">
+      <div class="hint">Only to correct a wrong entry. The last entry? Use UNDO instead.</div>
+      <div class="bbTeam teamA" id="bbFixNameA">Team A</div>
+      <div class="bbRow fix">
+        <button id="bbFixA1" onclick="fixPoints('A',1)">-1</button><button id="bbFixA2" onclick="fixPoints('A',2)">-2</button><button id="bbFixA3" onclick="fixPoints('A',3)">-3</button>
+      </div>
+      <div class="bbTeam teamB" id="bbFixNameB">Team B</div>
+      <div class="bbRow fix">
+        <button id="bbFixB1" onclick="fixPoints('B',1)">-1</button><button id="bbFixB2" onclick="fixPoints('B',2)">-2</button><button id="bbFixB3" onclick="fixPoints('B',3)">-3</button>
+      </div>
+    </div>
     <div>
       <button class="small names" id="bbFinA" onclick="finishWithWinner('A')">Finish: Team A wins</button>
       <button class="small names" id="bbFinB" onclick="finishWithWinner('B')">Finish: Team B wins</button>
@@ -282,12 +306,40 @@
     }
   }
 
+  // basketball: END QUARTER entries of this match still waiting on this phone (offline or slow server).
+  // An UNDO that is still waiting cancels the waiting entry before it (the same rule as the server's undo).
+  function waitingEnds(matchId) {
+    if (!session) return 0;
+    const stack = [];
+    for (const x of q.pending(session.username)) {
+      if (x.matchId !== matchId) continue;
+      if (x.type === "undo") stack.pop(); else stack.push(x.type);
+    }
+    return stack.filter((t) => t === "end_period").length;
+  }
+  const periodNameOf = (p) => (p <= 4 ? "Quarter " + p : "Overtime " + (p - 4));
+
+  // the quarter this phone is in: the server's quarter + END QUARTER presses not sent yet
+  function phonePeriod(s) { return s.period + waitingEnds(s.matchId); }
+
+  function updateBasketballUI() {
+    const s = lastState;
+    if (!s || s.sport !== "basketball") return;
+    const p = phonePeriod(s);
+    const minutes = p > 4 ? s.overtimeMinutes : s.quarterMinutes;
+    $("bbPeriod").textContent = s.status === "finished" ? "" : periodNameOf(p) + " (" + minutes + " min)";
+    $("bbEnd").textContent = "END " + periodNameOf(p).toUpperCase();
+  }
+
   // basketball: end the quarter (or overtime). The text says what will happen, from the last score this phone knows.
+  // The quarter number goes with it: the server refuses it if that quarter has already ended (a second press,
+  // or a second scorer), so a quarter can never be skipped by accident.
   function endPeriod() {
     const s = lastState;
     if (!s || s.sport !== "basketball") return;
-    let text = "End " + s.periodName + "?";
-    if (s.period >= 4) {
+    const p = phonePeriod(s);
+    let text = "End " + periodNameOf(p) + "?";
+    if (p >= 4) {
       if (s.scoreA === s.scoreB) {
         text += " The score is level, so a " + s.overtimeMinutes + "-minute overtime starts.";
       } else {
@@ -295,7 +347,20 @@
         text += " This ENDS THE MATCH: " + teamName(s, w) + " wins " + Math.max(s.scoreA, s.scoreB) + "-" + Math.min(s.scoreA, s.scoreB) + ".";
       }
     }
-    if (confirm(text + " You can still press UNDO afterwards.")) act("end_period");
+    if (confirm(text + " You can still press UNDO afterwards.")) act("end_period", null, null, { period: p });
+  }
+
+  // basketball corrections: take points away (a wrong entry that is not the last one; the last one = UNDO)
+  function toggleFix() {
+    $("bbFix").style.display = $("bbFix").style.display === "block" ? "none" : "block";
+  }
+  function fixPoints(team, n) {
+    const name = lastState ? teamName(lastState, team) : "Team " + team;
+    const msg = "CORRECTION: take " + n + (n === 1 ? " point" : " points") + " away from " + name + "? " +
+      "Use this only to fix a wrong entry. You can still press UNDO afterwards.";
+    if (!confirm(msg)) return;
+    $("bbFix").style.display = "none";
+    act("point", team, -n);
   }
 
   // sends the first waiting entry. force = called by the retry timer or a fresh connection;
@@ -328,7 +393,9 @@
     let t;
     try {
       if (x.type === "ball" && x.data) t = describe(x.data);
+      else if (x.type === "point" && x.value < 0) t = x.value + " for team " + x.team + " (correction)";
       else if (x.type === "point") t = "+" + (x.value || 1) + " for team " + x.team;
+      else if (x.type === "end_period" && x.data && x.data.period >= 1) t = "End " + periodNameOf(x.data.period);
       else if (x.type === "undo") t = "UNDO";
       else if (x.type === "finish") t = "Finish match" + (x.data && x.data.winner ? " (team " + x.data.winner + " wins)" : "");
       else if (x.type === "end_innings") t = "End innings";
@@ -570,6 +637,8 @@
       $("othersText").textContent = others.map(([u, c]) => "There are " + c + " unsent entries from " + u + " on this phone.").join(" ")
         + " They will be sent when that scorer logs in again.";
     }
+
+    updateBasketballUI();                                      // an END QUARTER just pressed (or just sent) moves the button on
   }
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
@@ -624,20 +693,25 @@
       }
     } else if (isBB) {
       $("bbNames").textContent = nameA + " vs " + nameB;
-      for (const n of [1, 2, 3]) {
-        $("bbA" + n).textContent = shortName(nameA) + " +" + n;
-        $("bbB" + n).textContent = shortName(nameB) + " +" + n;
+      $("bbNameA").textContent = nameA;
+      $("bbNameB").textContent = nameB;
+      $("bbFixNameA").textContent = nameA;
+      $("bbFixNameB").textContent = nameB;
+      for (const n of [1, 2, 3]) {                             // only the number: a long team name can never hide it
+        for (const t of ["A", "B"]) {
+          $("bb" + t + n).textContent = "+" + n;
+          $("bbFix" + t + n).textContent = "-" + n;
+        }
       }
       $("bbA").textContent = s.scoreA;
       $("bbB").textContent = s.scoreB;
-      $("bbPeriod").textContent = s.status === "finished" ? "" : s.periodName + " (" + s.periodMinutes + " min)";
       const label = (i) => (i < 4 ? "Q" + (i + 1) : "OT" + (i - 3));
       const parts = (s.periods || []).map((p, i) => label(i) + " " + p[0] + "-" + p[1]);
       if (s.status !== "finished" && (s.period > 1 || s.currentA || s.currentB)) {
         parts.push(label(s.period - 1) + " " + s.currentA + "-" + s.currentB + " (now)");
       }
       $("bbQuarters").textContent = parts.join(" · ");
-      $("bbEnd").textContent = "END " + String(s.periodName).toUpperCase();
+      updateBasketballUI();                                    // quarter label + END button (counts waiting presses)
       $("bbFinA").textContent = "Finish: " + shortName(nameA) + " wins";
       $("bbFinB").textContent = "Finish: " + shortName(nameB) + " wins";
     } else if (isCR) {
