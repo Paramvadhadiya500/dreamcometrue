@@ -12,7 +12,7 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 ## 2026-11-27 - Deployed college rules + toss on the server (by hand): migrations 005 and 006 applied
 - **What:** deploy of `eff3859` (includes `af4fa84`) by the user on the server: `docker compose run --rm app node migrate.js`, then `docker compose up -d` (app container re-created).
 - **Checked:** `migrate.js` printed "applied 005_category_and_rounds.sql", "applied 006_toss.sql", "Database is up to date". `up -d`: db and redis healthy, app started, caddy running. The user tested the site after the deploy: "it works perfectly".
-- **NOT checked / not shown:** the earlier steps (`./scripts/backup.sh`, `git pull`, `docker compose build`) were not in the pasted output; `./scripts/security-check.sh` was not run after this deploy.
+- **Also checked:** the user says the earlier steps (`./scripts/backup.sh`, `git pull`, `docker compose build`) were run as written (their output not pasted). `./scripts/security-check.sh` on the server after the deploy: 29 passed, 0 warnings, 0 failed.
 - **Undo:** `git revert eff3859 af4fa84`, then a normal deploy (build + up -d). The new column, constraints and event type can stay in the database (old code ignores them).
 
 ## 2026-11-27 - College rules (af4fa84) and toss (eff3859) pushed; all 4 CI jobs green
