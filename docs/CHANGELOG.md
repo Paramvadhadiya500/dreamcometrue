@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-27 - Delete-a-scorer (47fe968) and two changelog commits pushed; all 4 CI jobs green
+- **What:** `git push` of `b24851f`, `07ffa2d`, `47fe968` (`eff3859..47fe968`). NOT deployed yet (the server runs `eff3859`). The user tested delete on the laptop dev server after restarting it (a dev server started before the change answers "not found": restart it after changing server code).
+- **Checked:** GitHub Actions run 46002680069 for `47fe968`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API).
+- **Next (by hand, when the user decides):** deploy without a migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose up -d`.
+- **Undo:** see the entry below.
+
 ## 2026-11-27 - Admin page: delete a scorer (refused while they have a live match)
 - **What:** `admin.js`: new route `DELETE /api/admin/users/:username` (scorers only). In one transaction it locks the scorer and their assigned matches (`FOR UPDATE`, the same lock a scoring action takes), refuses with 409 "<name> is scoring a live match (<match>). Finish it first, or assign another scorer to it." if one of them has scores and is not finished, else deletes the assignments and the user, then refreshes those matches. New helper `matchIsLive(match, events)` (unknown sport or engine error counts as live, so the delete is refused rather than wrong). `public/js/admin.js`: red "Delete" button on each scorer row with a confirm box; a shown password of that scorer is cleared. Tests: `test.js` (`matchIsLive` for simple, cricket, table tennis), new `e2e/scorer-delete.spec.js` (real server + database), `e2e/admin.spec.js` (Delete: Cancel keeps, OK removes). No database change.
 - **Why:** old scorer accounts could only be disabled, so the Scorers list and the match form's checkbox list kept growing.
