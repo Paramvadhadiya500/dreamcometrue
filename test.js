@@ -1379,6 +1379,21 @@ const { createQueue } = require("./public/queue");
   const chase = st("cricket", [...[4, 1, 0, 6, 2, 1, 0, 4, 1, 1, 0, 2].map((r) => bl(r)), bl(1), bl(0, null, "bowled"), bl(1, "noball")], crCfg);
   assert.strictEqual(scoreSentence(chase), "ECE 3 for 1 after 0.2 overs. Need 20 from 10 balls. Free hit.");
 
+  // basketball: total score, the quarter now; the "current" and "history" lines of the board
+  const { basketballLines } = require("./public/js/match-logic");
+  const bbCfg = { config: { quarterMinutes: 7, overtimeMinutes: 5 } };
+  const E = { type: "end_period" };
+  const bb1 = st("basketball", [p("A", 3), E, p("B", 2), p("A", 1)], bbCfg);
+  assert.strictEqual(scoreSentence(bb1), "CSE 4, ECE 2. Quarter 2.");
+  assert.deepStrictEqual(basketballLines(bb1), { current: "Quarter 2 (7 min)", history: "Q1 3-0" });
+  assert.deepStrictEqual(basketballLines(st("basketball", [], bbCfg)), { current: "Quarter 1 (7 min)", history: "" });
+  const bbOt = st("basketball", [p("A", 2), p("B", 2), E, E, E, E, p("B", 3)], bbCfg);
+  assert.strictEqual(scoreSentence(bbOt), "CSE 2, ECE 5. Overtime 1.");
+  assert.deepStrictEqual(basketballLines(bbOt), { current: "Overtime 1 (5 min)", history: "Q1 2-2, Q2 0-0, Q3 0-0, Q4 0-0" });
+  const bbDone = st("basketball", [p("A", 2), p("B", 2), E, E, E, E, p("B", 3), E], bbCfg);
+  assert.strictEqual(scoreSentence(bbDone), "Match finished. Team B won 5-2 (after overtime). CSE 2, ECE 5.");
+  assert.deepStrictEqual(basketballLines(bbDone), { current: null, history: "Q1 2-2, Q2 0-0, Q3 0-0, Q4 0-0, OT1 0-3" });
+
   // the toss on the match page
   const { tossLine } = require("./public/js/match-logic");
   const tossB = { type: "toss", data: { winner: "B", choice: "bowl" } };

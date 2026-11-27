@@ -6,7 +6,7 @@ let session = JSON.parse(localStorage.getItem(SKEY) || "null");
 let overview = { matches: [], users: [], teams: [], competitions: [] };
 let editingId = null;
 
-const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", simple: "Other sport" };
+const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", basketball: "Basketball", simple: "Other sport" };
 
 function el(tag, text, cls) {
   const e = document.createElement(tag);
@@ -116,6 +116,7 @@ function renderMatches() {
     if (m.competition) bits.push(m.competition);
     if (m.stage !== "group") bits.push((overview.stages && overview.stages[m.stage]) || m.stage);
     if (m.sport === "cricket" && m.config) bits.push(m.config.overs + " overs");
+    if (m.sport === "basketball" && m.config) bits.push("4 x " + m.config.quarterMinutes + " min");
     if (m.teamA) bits.push(m.teamA + " vs " + m.teamB);
     if (m.startTime) bits.push(new Date(m.startTime).toLocaleString([], timeFmt));
     if (m.venue) bits.push(m.venue);
@@ -178,6 +179,18 @@ function sportChanged() {
   $("crGroup").style.display = s === "cricket" ? "block" : "none";
   $("ttGroup").style.display = s === "table_tennis" ? "block" : "none";
   $("vbGroup").style.display = s === "volleyball" ? "block" : "none";
+  $("bbGroup").style.display = s === "basketball" ? "block" : "none";
+}
+
+// Basketball: quarter length from the stage (college rule, the table comes from the server; not editable).
+function showBasketballHint() {
+  const cat = $("fCat").value;
+  const minutes = (overview.basketballMinutes || {})[$("fStage").value];
+  let hint = minutes ? "College rule: 4 quarters of " + minutes + " minutes (set from the stage)" : "";
+  let warn = false;
+  if (cat && cat !== "boys" && cat !== "girls") { hint = "Basketball is only for Student Boys and Student Girls"; warn = true; }
+  $("bbHint").textContent = hint;
+  $("bbHint").className = warn ? "small warn" : "small";
 }
 
 // College rule: the overs come from the category and the stage (the table comes from the server).
@@ -198,6 +211,7 @@ function showOversHint() {
   }
   $("oversHint").textContent = hint;
   $("oversHint").className = rule || !cat ? "small" : "small warn";
+  showBasketballHint();
 }
 
 function fillCollegeOvers() {

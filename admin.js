@@ -23,6 +23,8 @@ for (const c of CRICKET_CATEGORIES) {
 const HISTORY_LIMIT = 3000;   // actions listed per match (a real match has a few hundred)
 
 const BASKETBALL_CATEGORIES = ["boys", "girls"];
+// { group: 7, quarter_final: 7, semi_final: 10, final: 10, knockout: 7 }: the admin form shows it (same numbers as the server)
+const BASKETBALL_MINUTES = Object.fromEntries(Object.keys(STAGES).map((s) => [s, basketball.collegeQuarterMinutes(s)]));
 
 const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", simple: "sm" };
 
@@ -247,6 +249,7 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
       categories: CATEGORIES,
       stages: STAGES,
       collegeOvers: OVERS_TABLE,                 // the admin form fills the overs from this (same numbers as the server)
+      basketballMinutes: BASKETBALL_MINUTES,     // the admin form shows the quarter length from this
     });
   }));
 

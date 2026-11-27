@@ -37,15 +37,15 @@ admin.js             admin API router (/api/admin/*): matches, scorers
 standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
 engine.js            table tennis rules + effectivePoints() (undo handling)
-engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball
-engines/tableTennis.js, simple.js, cricket.js, volleyball.js   (each also has result(state) and headline(state, names))
+engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball
+engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql
 categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
-add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball [--overs --players --first --freehit --bestof --scorer]
+add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball|basketball [--overs --players --first --freehit --bestof --scorer]
 test.js              unit tests (all rules, a 400-game random cricket test, a 400-game random volleyball test)
 loadtest.js          load test (viewers); scorer login from SCORER_USER / SCORER_PASS
 loadtest-real.js     realistic traffic simulator (students arrive, browse, watch live, switch match, drop and reconnect; scorers; probes); see LESSON_13.md
@@ -104,6 +104,12 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   Points table: forA/forB = sets won (win 2, loss 0, same tie-breaks). A walkover keeps the sets and points as recorded.
   Admin form edits only "best of 3 or 5" (version 1). The other settings use the defaults. Settings are locked once scoring starts (409).
   NOT supported: serve/rotation, timeouts, substitutions, cards, libero, player names, points cap, "no result", editable set points in the admin form, 3-2-1-0 table points.
+- basketball (FIBA, points only; Boys and Girls only; settings in matches.config: quarterMinutes, overtimeMinutes, always set by admin.js
+  from the stage: 7 min up to the quarter final, 10 min semi final / final, overtime 5; display only, no clock, not editable):
+  actions `point{team A|B, value 1|2|3}`, `end_period` (scorer ends the quarter / overtime), `finish{data:{winner A|B}}` (walkover, points stay), `undo`.
+  State: scoreA/B, currentA/B, period, periodName, isOvertime, periodMinutes, periods ([a,b] per finished period), winner, ended, resultText.
+  Rules: 4 quarters; level after quarter 4 or an overtime = another overtime; no draws. Points table: forA/forB = points (win 2, loss 0).
+  NOT supported: game clock, fouls, timeouts, player names, FIBA 20-0 forfeit.
 - State of every sport also has: sport, matchId, name, version, status ("live"|"finished"), winner.
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
@@ -111,7 +117,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 - matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
-  type in: point, undo, finish, ball, end_innings, toss
+  type in: point, undo, finish, ball, end_innings, toss, end_period
 - schema_migrations(name PK, applied_at)
 Rules: NEVER edit a migration that was already applied. Add a new numbered file (004_...sql). Write migrations so they can run twice (IF NOT EXISTS).
 
@@ -161,7 +167,7 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 
 ## 11. Status
 Done: Lessons 1-13: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
-AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages),
+AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages), basketball engine (quarters, overtime, admin form, scorer and match pages),
 admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page,
 HTTPS settings (IP address or domain certificate through Caddy), login protection, request limits, weak-password finder, automatic backups, security check script.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).

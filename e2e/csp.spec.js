@@ -92,7 +92,7 @@ test("normal use is not blocked: the whole admin flow", async ({ page }) => {
   // form: every sport, then create a match with the test scorer
   const t = "csp-" + RUN;
   await page.getByRole("button", { name: "+ New match" }).click();
-  for (const s of ["table_tennis", "volleyball", "cricket", "simple"]) await page.locator("#fSport").selectOption(s);
+  for (const s of ["table_tennis", "volleyball", "basketball", "cricket", "simple"]) await page.locator("#fSport").selectOption(s);
   await page.locator("#fCat").selectOption("mix");             // also runs the category/stage listeners (college overs)
   await page.locator("#fStage").selectOption("final");
   await page.locator("#fStage").selectOption("group");

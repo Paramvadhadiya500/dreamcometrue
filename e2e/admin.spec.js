@@ -123,7 +123,7 @@ test.describe("admin page (today's behaviour)", () => {
     await page.getByRole("button", { name: "+ New match" }).click();
     await expect(page.locator("#formBox")).toBeVisible();
     await expect(page.locator("#lockNote")).toBeHidden();
-    const groups = { cricket: "#crGroup", table_tennis: "#ttGroup", volleyball: "#vbGroup", simple: null };
+    const groups = { cricket: "#crGroup", table_tennis: "#ttGroup", volleyball: "#vbGroup", basketball: "#bbGroup", simple: null };
     for (const [sport, shown] of Object.entries(groups)) {
       await page.locator("#fSport").selectOption(sport);
       for (const g of Object.values(groups).filter(Boolean)) {
@@ -167,6 +167,29 @@ test.describe("admin page (today's behaviour)", () => {
     await page.locator("#fTeamB").fill("Bee " + tag());
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.locator("#fErr")).toHaveText("cricket is only for Boys, Girls and Male Faculty");
+    await page.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("college rules: basketball quarters are 7 or 10 minutes from the stage; only Boys and Girls", async ({ page }) => {
+    await login(page);
+    await page.getByRole("button", { name: "+ New match" }).click();
+    await page.locator("#fSport").selectOption("basketball");
+    const hint = page.locator("#bbHint");
+    const pick = async (category, stage) => {
+      await page.locator("#fCat").selectOption(category);
+      await page.locator("#fStage").selectOption(stage);
+    };
+    await pick("boys", "group");          await expect(hint).toHaveText("College rule: 4 quarters of 7 minutes (set from the stage)");
+    await pick("girls", "quarter_final"); await expect(hint).toHaveText("College rule: 4 quarters of 7 minutes (set from the stage)");
+    await pick("girls", "semi_final");    await expect(hint).toHaveText("College rule: 4 quarters of 10 minutes (set from the stage)");
+    await pick("boys", "final");          await expect(hint).toHaveText("College rule: 4 quarters of 10 minutes (set from the stage)");
+
+    await pick("mix", "group");
+    await expect(hint).toHaveText("Basketball is only for Student Boys and Student Girls");
+    await page.locator("#fTeamA").fill("Ant " + tag());
+    await page.locator("#fTeamB").fill("Bee " + tag());
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator("#fErr")).toHaveText("basketball is only for Boys and Girls");
     await page.getByRole("button", { name: "Cancel" }).click();
   });
 

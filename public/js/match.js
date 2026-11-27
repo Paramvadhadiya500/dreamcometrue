@@ -128,13 +128,16 @@ socket.on("score:update", (s) => {
   const isTT = s.sport === "table_tennis";
   const isVB = s.sport === "volleyball";
   const isCR = s.sport === "cricket";
+  const isBB = s.sport === "basketball";
   $("duel").hidden = isCR;
-  $("current").hidden = !(isTT || isVB);
-  $("history").hidden = !(isTT || isVB);
+  $("current").hidden = !(isTT || isVB || (isBB && !finished));
+  $("history").hidden = !(isTT || isVB || isBB);
   $("cricket").hidden = !isCR;
 
   if (isCR) {
     showCricket(s);
+  } else if (isBB) {
+    showBasketball(s);
   } else {
     showDuel(s, isTT, isVB);
   }
@@ -163,6 +166,20 @@ function showDuel(s, isTT, isVB) {
     setNum("sB", s.scoreB);
     $("unit").textContent = "";
   }
+}
+
+// basketball: total score big, the quarter being played now below it, then the points of each finished quarter
+function showBasketball(s) {
+  $("nameA").textContent = teamName(s, "A");
+  $("nameB").textContent = teamName(s, "B");
+  setNum("sA", s.scoreA);
+  setNum("sB", s.scoreB);
+  $("unit").textContent = "";
+  const lines = MatchLogic.basketballLines(s);
+  $("curLabel").textContent = lines.current || "";
+  setNum("pA", s.currentA);
+  setNum("pB", s.currentB);
+  $("history").textContent = lines.history;
 }
 
 // place, time and competition

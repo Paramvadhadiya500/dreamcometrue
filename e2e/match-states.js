@@ -26,6 +26,10 @@ const states = {
     ...[4, 1, 0, 6, 2, 1, 0, 4, 1, 1, 0, 2].map((r) => ball(r)),                             // innings 1: 2 overs, 22 runs
     ball(1), ball(0, null, "bowled"), ball(1, "noball"),                                      // innings 2: a wicket, then a no ball
   ], { config: { overs: 2, players: 4, firstBatting: "A", freeHit: true } }),
+  basketball: () => stateFor("basketball", [point("A", 3), point("B", 2), { type: "end_period" }, point("A", 2), point("B", 1)],
+    { config: { quarterMinutes: 7, overtimeMinutes: 5 } }),                                 // 5-3, quarter 2 now 2-1
+  basketballFinished: () => stateFor("basketball", [point("A", 2), point("B", 2), ...Array(4).fill({ type: "end_period" }),
+    point("B", 3), { type: "end_period" }], { config: { quarterMinutes: 10, overtimeMinutes: 5 } }),   // 2-5 after overtime
   cricketBeforeToss: () => stateFor("cricket", [], { config: { overs: 12, players: 11 } }),
   cricketAfterToss: () => stateFor("cricket", [{ type: "toss", data: { winner: "B", choice: "bowl" } }, ball(4)],
     { config: { overs: 12, players: 11 } }),                                                 // ECE won, bowls: CSE bats

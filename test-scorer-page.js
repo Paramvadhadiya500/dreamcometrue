@@ -274,5 +274,75 @@ const blockedTest = (async () => {
   ok("offline toss: waits in order before the balls; reload keeps it");
 }
 
+// ---- 10. basketball: +1/+2/+3, End quarter asks first (and says when it ends the match or starts overtime), finish ----
+{
+  const basketball = require("./engines/basketball");
+  const { effectivePoints } = require("./engine");
+  let version = 0;
+  const bbState = (events) => ({ matchId: "m1", name: "Match 1", sport: "basketball", teamA: "CSE", teamB: "ECE",
+    ...basketball.compute(effectivePoints(events), { config: { quarterMinutes: 7, overtimeMinutes: 5 } }), version: ++version });
+  const P = (t, v) => ({ type: "point", team: t, value: v });
+  const END = { type: "end_period" };
+  const shown = (w, id) => w.el(id).style.display === "block";
+
+  const w = makeWorld({ preset: { "scorer-session": session } });
+  w.connect();
+  w.ctx.showState(bbState([]));
+  assert.ok(shown(w, "bbView") && shown(w, "bbControls"), "basketball view and buttons");
+  for (const id of ["ttView", "simpleView", "crView", "ttControls", "simpleControls", "crControls", "crToss"]) {
+    assert.ok(!shown(w, id), "other sports hidden: " + id);
+  }
+  assert.strictEqual(w.el("bbA3").textContent, "CSE +3");
+  assert.strictEqual(w.el("bbB1").textContent, "ECE +1");
+  assert.strictEqual(w.el("bbPeriod").textContent, "Quarter 1 (7 min)");
+  assert.strictEqual(w.el("bbEnd").textContent, "END QUARTER 1");
+  assert.strictEqual(w.el("bbFinB").textContent, "Finish: ECE wins");
+
+  // a 3-pointer is sent as point A 3
+  w.ctx.act("point", "A", 3);
+  assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.team, w.sent[0].payload.value]), JSON.stringify(["point", "A", 3]));
+  w.ack({ ok: true });
+
+  // scores and quarter scores on screen
+  w.ctx.showState(bbState([P("A", 3), END, P("B", 2)]));
+  assert.deepStrictEqual([w.el("bbA").textContent, w.el("bbB").textContent], ["3", "2"]);
+  assert.strictEqual(w.el("bbPeriod").textContent, "Quarter 2 (7 min)");
+  assert.strictEqual(w.el("bbQuarters").textContent, "Q1 3-0 · Q2 0-2 (now)");
+
+  // End quarter: Cancel sends nothing; OK sends end_period
+  w.setConfirm(false); w.ctx.endPeriod();
+  assert.strictEqual(w.sent.length, 0, "Cancel sends nothing");
+  assert.ok(w.confirms.at(-1).startsWith("End Quarter 2?"), w.confirms.at(-1));
+  w.setConfirm(true); w.ctx.endPeriod();
+  assert.strictEqual(w.sent[0].payload.type, "end_period");
+  w.ack({ ok: true });
+
+  // quarter 4, not level: the confirm says it ENDS the match and who wins
+  w.ctx.showState(bbState([P("A", 3), END, END, END]));
+  w.setConfirm(false); w.ctx.endPeriod();
+  assert.ok(w.confirms.at(-1).includes("This ENDS THE MATCH: CSE wins 3-0."), w.confirms.at(-1));
+  // quarter 4, level: the confirm says overtime starts
+  w.ctx.showState(bbState([P("A", 2), P("B", 2), END, END, END]));
+  w.ctx.endPeriod();
+  assert.ok(w.confirms.at(-1).includes("The score is level, so a 5-minute overtime starts."), w.confirms.at(-1));
+  // in overtime
+  w.ctx.showState(bbState([P("A", 2), P("B", 2), END, END, END, END]));
+  assert.strictEqual(w.el("bbPeriod").textContent, "Overtime 1 (5 min)");
+  assert.strictEqual(w.el("bbEnd").textContent, "END OVERTIME 1");
+
+  // finish early with a winner
+  w.setConfirm(true); w.ctx.finishWithWinner("B");
+  assert.ok(w.confirms.at(-1).includes("give the win to ECE"));
+  assert.strictEqual(JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.data]), JSON.stringify(["finish", { winner: "B" }]));
+  w.ack({ ok: true });
+
+  // finished: no scoring buttons, UNDO stays, result shown
+  w.ctx.showState(bbState([P("A", 3), END, END, END, END]));
+  assert.ok(!shown(w, "bbControls") && shown(w, "undoRow"), "finished: only UNDO");
+  assert.strictEqual(w.el("status").textContent, "FINISHED. Team A won 3-0");
+  assert.ok(w.ctx.entryText({ matchId: "m1", type: "end_period" }).endsWith("End quarter / overtime"));
+  ok("basketball: +1/+2/+3, End quarter confirm texts, overtime, finish, finished screen");
+}
+
 await blockedTest;
 };

@@ -22,6 +22,8 @@
     } else if (s.sport === "volleyball") {
       text = "Sets: " + A + " " + s.setsA + ", " + B + " " + s.setsB + ". " +
         (s.isDeciding ? "Deciding set" : "Set " + s.currentSet) + ": " + s.pointsA + " to " + s.pointsB + ".";
+    } else if (s.sport === "basketball") {
+      text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + s.periodName + ".");
     } else {
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + ".";
     }
@@ -80,7 +82,18 @@
     return teamName(s, s.toss.winner) + " won the toss and chose to " + s.toss.choice;
   }
 
-  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText, tossLine: tossLine };
+  // Basketball board lines: the quarter being played now ("Quarter 2 (7 min)", null when finished)
+  // and the points scored in each finished quarter / overtime ("Q1 12-10, Q2 8-9, OT1 4-2").
+  function basketballLines(s) {
+    var parts = (s.periods || []).map(function (p, i) { return (i < 4 ? "Q" + (i + 1) : "OT" + (i - 3)) + " " + p[0] + "-" + p[1]; });
+    return {
+      current: s.status === "finished" ? null : s.periodName + " (" + s.periodMinutes + " min)",
+      history: parts.join(", "),
+    };
+  }
+
+  var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText, tossLine: tossLine,
+    basketballLines: basketballLines };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MatchLogic = api;
 })(this);

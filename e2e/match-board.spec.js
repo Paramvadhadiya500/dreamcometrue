@@ -47,6 +47,23 @@ test("table tennis and volleyball: games / sets big, the running game / set belo
   await expect(page.locator("#history")).toHaveText("Sets: 25-20");
 });
 
+test("basketball: total score big, the quarter now below, finished quarters listed; overtime result", async ({ page }) => {
+  await show(page, states.basketball());
+  await expect(page.locator("#sA")).toHaveText("5");
+  await expect(page.locator("#sB")).toHaveText("3");
+  await expect(page.locator("#unit")).toHaveText("");
+  await expect(page.locator("#current")).toContainText("Quarter 2 (7 min)");
+  await expect(page.locator("#current")).toContainText("2 - 1");
+  await expect(page.locator("#history")).toHaveText("Q1 3-2");
+  await expect(page.locator("#status")).toHaveText("LIVE");
+
+  await show(page, states.basketballFinished());
+  await expect(page.locator("#status")).toHaveText("FINISHED");
+  await expect(page.locator("#current")).toBeHidden();
+  await expect(page.locator("#history")).toHaveText("Q1 2-2, Q2 0-0, Q3 0-0, Q4 0-0, OT1 0-3");
+  await expect(page.locator("#result")).toHaveText("Team B won 5-2 (after overtime)");
+});
+
 test("cricket: batting score big, overs, chase, free hit; no names-beside-score row", async ({ page }) => {
   await show(page, states.cricketChase());
   await expect(page.locator("#crBig")).toHaveText("ECE 3/1");
