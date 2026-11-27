@@ -9,6 +9,18 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-27 - Deployed college rules + toss on the server (by hand): migrations 005 and 006 applied
+- **What:** deploy of `eff3859` (includes `af4fa84`) by the user on the server: `docker compose run --rm app node migrate.js`, then `docker compose up -d` (app container re-created).
+- **Checked:** `migrate.js` printed "applied 005_category_and_rounds.sql", "applied 006_toss.sql", "Database is up to date". `up -d`: db and redis healthy, app started, caddy running. The user tested the site after the deploy: "it works perfectly".
+- **NOT checked / not shown:** the earlier steps (`./scripts/backup.sh`, `git pull`, `docker compose build`) were not in the pasted output; `./scripts/security-check.sh` was not run after this deploy.
+- **Undo:** `git revert eff3859 af4fa84`, then a normal deploy (build + up -d). The new column, constraints and event type can stay in the database (old code ignores them).
+
+## 2026-11-27 - College rules (af4fa84) and toss (eff3859) pushed; all 4 CI jobs green
+- **What:** `git push` of `af4fa84` and `eff3859` (`84b983e..eff3859`). NOT deployed yet (the server runs Phase 8).
+- **Checked:** GitHub Actions run 45996080219 for `eff3859`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API; test counts not read from the log).
+- **Next (by hand, when the user decides):** deploy WITH migrations 005 and 006: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (must print "applied" for 005 and 006), `docker compose up -d`.
+- **Undo:** see the two entries below.
+
 ## 2026-11-27 - Cricket: the scorer records the toss (no more "Bats first" in the admin form)
 - **What:** new migration `migrations/006_toss.sql` (event type `toss` allowed). `engines/cricket.js`: event `toss` {winner A|B, choice bat|bowl}; the toss decides who bats first (old matches without a toss still use `config.firstBatting`); state has `toss` and `needsToss`; `validate()` refuses a ball / end innings before the toss ("record the toss first"), a second toss or a toss after a ball ("toss already recorded"), bad toss data ("bad toss"); abandon is allowed before the toss; `clean()` stores only {winner, choice}; `headline()` says "Waiting for the toss" / "ECE won the toss and chose to bowl". UNDO takes the toss back (no code change needed). `public/scorer.html`: toss box (winner, bat/bowl, Start match with a confirm box) instead of the ball buttons until the toss; offline, the ball buttons open at once while the toss waits in the queue (sent first). `public/queue.js`: new read-only `pending(user)`. Match page: line "Waiting for the toss" / who won it; screen-reader sentence too. `audit.js`: "Toss: CSE won, chose to bat". Admin form: "Bats first" box removed (new matches save "A" as the old-data fallback; editing keeps the saved value so a scored match is not refused). `loadtest-real.js` (+ `-diag`, `-fixed` copies): send a toss first. Tests: `test.js` (toss rules, all winner/choice pairs, undo, old match, headline, history text, match-page text, queue `pending`; the 400 random games now start with a random toss; the "end innings needs a ball" test now has a toss first), `test-scorer-page.js` (toss box, confirm, offline + reload), `e2e/match-board.spec.js` (toss line), new `e2e/cricket-toss.spec.js` (real server + database: ball refused before toss, toss saved cleaned, second toss refused).
 - **Why:** on the event day many matches run at the same time; the toss happens on the ground, so only the scorer knows who bats first.
