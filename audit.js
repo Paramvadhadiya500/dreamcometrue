@@ -28,6 +28,7 @@ function actionText(e, names) {
   if (e.type === "ball" && e.data) return ballText(e.data);
   if (e.type === "finish") return "Finish match" + (e.data && names[e.data.winner] ? " (" + names[e.data.winner] + " wins)" : "");
   if (e.type === "end_innings") return "End innings";
+  if (e.type === "end_period") return "End quarter / overtime";
   if (e.type === "toss" && e.data) return "Toss: " + (names[e.data.winner] || e.data.winner) + " won, chose to " + e.data.choice;
   return String(e.type);
 }

@@ -856,6 +856,209 @@ const { FailureLimiter } = require("./rateLimit");
   assert.ok(vbUndos > 500, "the random test really used undo");
 }
 
+// ======================= Basketball (FIBA: 4 quarters, overtime until someone wins) =======================
+{
+  const bb = getEngine("basketball");
+  assert.ok(bb, "the registry returns the basketball engine");
+
+  const P = (t, v) => ({ type: "point", team: t, value: v });
+  const END = { type: "end_period" };
+  const undo = { type: "undo" };
+  const fin = (w) => ({ type: "finish", data: { winner: w } });
+  const run = (events, config) => bb.compute(effectivePoints(events), { config });
+  const quarters = (n) => Array(n).fill(END);
+
+  // ---- a fresh match ----
+  let b = run([]);
+  assert.deepStrictEqual([b.scoreA, b.scoreB, b.period, b.isOvertime, b.periodName, b.status, b.winner],
+    [0, 0, 1, false, "Quarter 1", "live", null]);
+  assert.deepStrictEqual([b.currentA, b.currentB, b.periods], [0, 0, []]);
+  assert.deepStrictEqual([b.quarterMinutes, b.overtimeMinutes, b.periodMinutes], [10, 5, 10]);
+
+  // ---- 1, 2 and 3 points ----
+  b = run([P("A", 2), P("A", 3), P("B", 1), P("B", 2)]);
+  assert.deepStrictEqual([b.scoreA, b.scoreB, b.currentA, b.currentB], [5, 3, 5, 3]);
+
+  // ---- quarters: the scorer ends each one; points per quarter are kept ----
+  b = run([P("A", 2), END, P("B", 3), P("B", 2)]);
+  assert.deepStrictEqual([b.period, b.periodName, b.scoreA, b.scoreB, b.currentA, b.currentB], [2, "Quarter 2", 2, 5, 0, 5]);
+  assert.deepStrictEqual(b.periods, [[2, 0]]);
+  b = run(quarters(3));
+  assert.deepStrictEqual([b.period, b.status], [4, "live"], "an empty quarter (0-0) can be ended");
+
+  // ---- end of quarter 4: someone is ahead, the match is over ----
+  b = run([P("A", 2), ...quarters(3), P("B", 3), END]);
+  assert.deepStrictEqual([b.status, b.winner, b.ended, b.scoreA, b.scoreB], ["finished", "B", "normal", 2, 3]);
+  assert.deepStrictEqual(b.periods, [[2, 0], [0, 0], [0, 0], [0, 3]]);
+  assert.strictEqual(b.resultText, "Team B won 3-2");
+  b = run([P("A", 3), ...quarters(4)]);
+  assert.strictEqual(b.resultText, "Team A won 3-0", "the winner's score comes first");
+
+  // ---- end of quarter 4 level: overtime (5 min), again and again until someone wins ----
+  const level = [P("A", 2), P("B", 2), ...quarters(4)];
+  b = run(level);
+  assert.deepStrictEqual([b.status, b.period, b.isOvertime, b.periodName, b.periodMinutes], ["live", 5, true, "Overtime 1", 5]);
+  b = run([...level, P("A", 1), P("B", 1), END]);
+  assert.deepStrictEqual([b.status, b.period, b.periodName], ["live", 6, "Overtime 2"], "still level after overtime 1");
+  b = run([...level, P("A", 1), P("B", 1), END, P("B", 2), END]);
+  assert.deepStrictEqual([b.status, b.winner, b.scoreA, b.scoreB, b.periods.length], ["finished", "B", 3, 5, 6]);
+  assert.strictEqual(b.resultText, "Team B won 5-3 (after overtime)");
+
+  // ---- nothing counts after the match is over ----
+  const done = [P("A", 2), ...quarters(4)];
+  assert.deepStrictEqual(run([...done, P("B", 3), END, END]), run(done), "extra events are ignored");
+  assert.strictEqual(bb.validate(P("A", 2), run(done)), "match already finished");
+  assert.strictEqual(bb.validate(END, run(done)), "match already finished");
+  assert.strictEqual(bb.validate(fin("A"), run(done)), "match already finished");
+
+  // ---- undo ----
+  b = run([P("A", 3), P("B", 2), undo]);
+  assert.deepStrictEqual([b.scoreA, b.scoreB], [3, 0], "undo takes back the last basket");
+  b = run([P("A", 3), END, undo]);
+  assert.deepStrictEqual([b.period, b.currentA, b.periods], [1, 3, []], "undo of End quarter reopens the quarter");
+  b = run([...done, undo]);
+  assert.deepStrictEqual([b.status, b.winner, b.period], ["live", null, 4], "undo of the last End quarter reopens the match");
+  b = run([P("A", 2), fin("B"), undo]);
+  assert.deepStrictEqual([b.status, b.winner], ["live", null], "undo of a walkover reopens the match");
+  b = run([P("A", 2), undo, undo]);
+  assert.deepStrictEqual([b.scoreA, b.status], [0, "live"], "extra undo does not break compute");
+
+  // ---- walkover (scorer finishes early and picks the winner; the points stay as recorded) ----
+  b = run([P("A", 2), END, P("B", 1), fin("B")]);
+  assert.deepStrictEqual([b.status, b.winner, b.ended, b.scoreA, b.scoreB], ["finished", "B", "walkover", 2, 1]);
+  assert.strictEqual(b.resultText, "Team B won (walkover)");
+  assert.strictEqual(run([fin("A"), P("B", 3)]).scoreB, 0, "no scoring after a walkover");
+
+  // ---- checking an action ----
+  const live = run([P("A", 2)]);
+  for (const v of [1, 2, 3]) {
+    assert.strictEqual(bb.validate(P("A", v), live), null);
+    assert.strictEqual(bb.validate(P("B", v), live), null);
+  }
+  for (const v of [0, 4, -1, 2.5, "2", null, undefined, true]) {
+    assert.strictEqual(bb.validate(P("A", v), live), "points must be 1, 2 or 3", "rejected value " + String(v));
+  }
+  assert.strictEqual(bb.validate(P("C", 2), live), "bad team");
+  assert.strictEqual(bb.validate({ type: "point", value: 2 }, live), "bad team");
+  assert.strictEqual(bb.validate(END, live), null);
+  assert.strictEqual(bb.validate(END, run([])), null, "a quarter can end 0-0");
+  assert.strictEqual(bb.validate({ type: "ball", data: {} }, live), "unknown action");
+  assert.strictEqual(bb.validate({ type: "end_innings" }, live), "unknown action");
+  assert.strictEqual(bb.validate({ type: "toss", data: { winner: "A", choice: "bat" } }, live), "unknown action");
+  assert.strictEqual(bb.validate({ type: "finish" }, live), "choose the winner");
+  assert.strictEqual(bb.validate({ type: "finish", data: { winner: "draw" } }, live), "choose the winner");
+  assert.strictEqual(bb.validate({ type: "finish", data: [] }, live), "choose the winner");
+  assert.strictEqual(bb.validate(fin("A"), live), null);
+
+  // ---- the cleaned copy that is stored ----
+  assert.deepStrictEqual(bb.clean({ type: "finish", data: { winner: "B", junk: "x".repeat(100) } }), { winner: "B" });
+  assert.strictEqual(bb.clean({ type: "finish", data: { winner: "Z" } }), null);
+  assert.strictEqual(bb.clean({ type: "end_period", data: { winner: "A" } }), null, "end_period stores no details");
+  assert.strictEqual(bb.clean({ type: "point", team: "A", value: 2, data: { x: 1 } }), null);
+
+  // ---- match settings (minutes are shown only; there is no clock) ----
+  const def = { quarterMinutes: 10, overtimeMinutes: 5 };
+  assert.deepStrictEqual(bb.normalizeConfig(undefined), def);
+  assert.deepStrictEqual(bb.normalizeConfig({}), def);
+  assert.deepStrictEqual(bb.normalizeConfig({ quarterMinutes: 7 }), { ...def, quarterMinutes: 7 });
+  assert.deepStrictEqual(bb.normalizeConfig({ quarterMinutes: 7, hack: 1 }), { ...def, quarterMinutes: 7 }, "unknown keys are dropped");
+  assert.deepStrictEqual(bb.normalizeConfig({ quarterMinutes: 0 }), def, "invalid settings fall back to the defaults");
+  assert.deepStrictEqual(bb.normalizeConfig([1]), def);
+  assert.strictEqual(bb.checkConfig(def), null);
+  assert.strictEqual(bb.checkConfig({ quarterMinutes: 7, overtimeMinutes: 5 }), null);
+  const badCfg = [null, [], "x", { ...def, quarterMinutes: 0 }, { ...def, quarterMinutes: 21 }, { ...def, quarterMinutes: "7" },
+    { ...def, quarterMinutes: 7.5 }, { ...def, overtimeMinutes: 0 }, { ...def, overtimeMinutes: 11 }, { ...def, overtimeMinutes: null }];
+  for (const c of badCfg) assert.strictEqual(typeof bb.checkConfig(c), "string", "rejected: " + JSON.stringify(c));
+  b = run([], { quarterMinutes: 7, overtimeMinutes: 5 });
+  assert.deepStrictEqual([b.quarterMinutes, b.periodMinutes], [7, 7]);
+
+  // ---- college rule: 7 min quarters up to the quarter final, 10 min in the semi final and final ----
+  assert.strictEqual(bb.collegeQuarterMinutes("group"), 7);
+  assert.strictEqual(bb.collegeQuarterMinutes("quarter_final"), 7);
+  assert.strictEqual(bb.collegeQuarterMinutes("knockout"), 7, "old 'knockout' matches are before the semi final");
+  assert.strictEqual(bb.collegeQuarterMinutes("semi_final"), 10);
+  assert.strictEqual(bb.collegeQuarterMinutes("final"), 10);
+  assert.strictEqual(bb.collegeQuarterMinutes("toString"), 7, "not fooled by object built-ins");
+  assert.strictEqual(bb.collegeQuarterMinutes(undefined), 7);
+
+  // ---- result() and headline() ----
+  const nm = { A: "CSE", B: "ECE" };
+  let st = run([P("A", 2), END, P("B", 3)]);
+  assert.deepStrictEqual(bb.result(st), { finished: false, winner: null, forA: 2, forB: 3 });
+  assert.strictEqual(bb.headline(st, nm), "CSE 2-3 ECE (Q2)");
+  st = run([...level, P("A", 1)]);
+  assert.strictEqual(bb.headline(st, nm), "CSE 3-2 ECE (OT1)");
+  st = run(done);
+  assert.deepStrictEqual(bb.result(st), { finished: true, winner: "A", forA: 2, forB: 0 });
+  assert.strictEqual(bb.headline(st, nm), "CSE 2-0 ECE");
+  st = run([...level, P("B", 2), END]);
+  assert.strictEqual(bb.headline(st, nm), "CSE 2-4 ECE (OT)");
+  st = run([P("A", 2), fin("B")]);
+  assert.deepStrictEqual(bb.result(st), { finished: true, winner: "B", forA: 2, forB: 0 }, "a walkover keeps the points as recorded");
+  assert.strictEqual(bb.headline(st, nm), "ECE won (walkover), 2-0");
+  assert.strictEqual(bb.headline(run([]), nm), "CSE 0-0 ECE (Q1)");
+
+  // ---- points table: win 2, loss 0; forA / forB are points, so ties are split by point difference ----
+  const bbDone = (a, c, evs) => ({ stage: "group", competition: "", sport: "basketball", category: "boys", teamA: a, teamB: c, result: bb.result(run(evs)) });
+  const bbTable = buildStandings([
+    bbDone("CSE", "ECE", [P("A", 3), P("A", 2), ...quarters(4)]),       // CSE 5-0
+    bbDone("ECE", "ME", [P("A", 2), ...quarters(4)]),                    // ECE 2-0
+    bbDone("ME", "CSE", [P("B", 2), ...quarters(3)]),                    // not finished: ignored
+  ]);
+  assert.strictEqual(bbTable.length, 1);
+  assert.strictEqual(bbTable[0].name, "Basketball (Boys)");
+  const bbRows = Object.fromEntries(bbTable[0].rows.map((r) => [r.team, r]));
+  assert.deepStrictEqual([bbRows.CSE.points, bbRows.CSE.won, bbRows.CSE.diff], [2, 1, 5]);
+  assert.deepStrictEqual([bbRows.ECE.points, bbRows.ECE.won, bbRows.ECE.lost, bbRows.ECE.diff], [2, 1, 1, -3]);
+  assert.deepStrictEqual([bbRows.ME.points, bbRows.ME.lost], [0, 1]);
+  assert.strictEqual(bbTable[0].rows[0].team, "CSE", "same points and wins: the better point difference is first");
+
+  // ---- random matches: 400 games, invariants checked after EVERY event ----
+  const br = rng(2027);
+  let bbFinished = 0, bbUndos = 0, bbOvertimes = 0;
+  for (let g = 0; g < 400; g++) {
+    const events = [];
+    const kept = [];
+    let state = run(events);
+    for (let step = 0; step < 3000 && state.status !== "finished"; step++) {
+      const x = br();
+      let e;
+      if (kept.length > 0 && x < 0.08) { events.push(undo); kept.pop(); bbUndos++; }
+      else {
+        e = x < 0.2 ? END : P(br() < 0.5 ? "A" : "B", 1 + Math.floor(br() * 3));
+        assert.strictEqual(bb.validate(e, state), null);
+        events.push(e); kept.push(e);
+      }
+      state = run(events);
+      assert.deepStrictEqual(state, bb.compute(kept, { config: undefined }), "undo equals a fresh replay");
+      const sumA = state.periods.reduce((t, p) => t + p[0], 0) + state.currentA;
+      const sumB = state.periods.reduce((t, p) => t + p[1], 0) + state.currentB;
+      assert.deepStrictEqual([sumA, sumB], [state.scoreA, state.scoreB], "quarter scores add up to the total");
+      assert.strictEqual(state.isOvertime, state.period > 4);
+      if (state.status === "live") {
+        assert.strictEqual(state.periods.length, state.period - 1);
+        if (state.period > 4) {
+          // every overtime starts level: the score at the end of quarter 4 and each earlier overtime was level
+          let a = 0, c = 0;
+          state.periods.forEach((p, i) => { a += p[0]; c += p[1]; if (i >= 3) assert.strictEqual(a, c, "overtime only after a level score"); });
+        }
+      } else {
+        assert.ok(state.periods.length >= 4);
+        assert.notStrictEqual(state.scoreA, state.scoreB, "a finished match is never a draw");
+        assert.strictEqual(state.winner, state.scoreA > state.scoreB ? "A" : "B");
+        if (state.periods.length > 4) bbOvertimes++;
+      }
+    }
+    if (state.status === "finished") {
+      bbFinished++;
+      assert.strictEqual(bb.validate(P("A", 2), state), "match already finished");
+    }
+  }
+  assert.ok(bbFinished >= 390, "almost all random matches finish (" + bbFinished + ")");
+  assert.ok(bbUndos > 500, "the random test really used undo");
+  assert.ok(bbOvertimes > 0, "the random test really reached overtime (" + bbOvertimes + ")");
+}
+
 // ======================= Startup guard: JWT_SECRET =======================
 const { checkJwtSecret, DEV_SECRET } = require("./config");
 {
@@ -1088,8 +1291,13 @@ const { createQueue } = require("./public/queue");
   const h4 = hist("volleyball", [{ type: "finish", data: { winner: "B" } }], { config: { bestOf: 3 } });
   assert.deepStrictEqual([h4.rows[0].text, h4.rows[0].after], ["Finish match (ECE wins)", "ECE won (walkover), sets 0-0"]);
 
+  // basketball: a 3-pointer, then the end of quarter 1 (newest row first)
+  const hb = hist("basketball", [{ type: "point", team: "A", value: 3 }, { type: "end_period" }], { config: { quarterMinutes: 7, overtimeMinutes: 5 } });
+  assert.deepStrictEqual([hb.rows[1].text, hb.rows[1].after], ["+3 for CSE", "CSE 3-0 ECE (Q1)"]);
+  assert.deepStrictEqual([hb.rows[0].text, hb.rows[0].after], ["End quarter / overtime", "CSE 3-0 ECE (Q2)"]);
+
   // table tennis: a point has no value
-  const h5 = hist("table_tennis", [{ type: "point", team: "A" }]);
+  const h5 =hist("table_tennis", [{ type: "point", team: "A" }]);
   assert.deepStrictEqual([h5.rows[0].text, h5.rows[0].after], ["+1 for CSE", "CSE 0-0 ECE (1-0 in this game)"]);
 
   // an engine that throws must not break the history: the row just has no score
@@ -1258,6 +1466,18 @@ const { createQueue } = require("./public/queue");
     for (const sport of ["simple", "table_tennis", "volleyball"]) {
       assert.strictEqual(parseMatch({ sport, teamA: "X", teamB: "Y", category }).category, category, sport + " " + category);
     }
+  }
+  // basketball: only Boys and Girls; quarter minutes always from the stage (the admin cannot change them)
+  const bbBody = (o) => ({ sport: "basketball", teamA: "CSE", teamB: "ME", category: "boys", stage: "group", ...o });
+  assert.deepStrictEqual(parseMatch(bbBody({})).config, { quarterMinutes: 7, overtimeMinutes: 5 }, "group = 7 min");
+  assert.strictEqual(parseMatch(bbBody({ stage: "quarter_final" })).config.quarterMinutes, 7);
+  assert.strictEqual(parseMatch(bbBody({ stage: "semi_final" })).config.quarterMinutes, 10);
+  assert.strictEqual(parseMatch(bbBody({ stage: "final", category: "girls" })).config.quarterMinutes, 10);
+  assert.deepStrictEqual(parseMatch(bbBody({ config: { quarterMinutes: 3, overtimeMinutes: 9, hack: 1 } })).config,
+    { quarterMinutes: 7, overtimeMinutes: 5 }, "minutes sent by the page are ignored");
+  assert.strictEqual(parseMatch(bbBody({ category: "" })).category, "", "scripts may leave the category empty");
+  for (const category of ["male_faculty", "female_faculty", "mix"]) {
+    assert.match(problem(bbBody({ category })), /basketball is only for Boys and Girls/);
   }
   // bad values are refused
   assert.match(problem(crBody({ category: "staff" })), /category/);

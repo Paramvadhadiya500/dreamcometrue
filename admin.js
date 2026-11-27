@@ -5,6 +5,7 @@ const bcrypt = require("bcryptjs");
 const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
 const volleyball = require("./engines/volleyball");
+const basketball = require("./engines/basketball");
 const { buildHistory } = require("./audit");
 const { CATEGORIES, STAGES } = require("./categories");
 const { competitionOf } = require("./standings");
@@ -21,7 +22,9 @@ for (const c of CRICKET_CATEGORIES) {
 
 const HISTORY_LIMIT = 3000;   // actions listed per match (a real match has a few hundred)
 
-const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", simple: "sm" };
+const BASKETBALL_CATEGORIES = ["boys", "girls"];
+
+const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", simple: "sm" };
 
 class Problem extends Error {
   constructor(message, status = 400) {
@@ -60,6 +63,9 @@ function parseMatch(body) {
   }
   if (sport === "cricket" && category !== "" && !CRICKET_CATEGORIES.includes(category)) {
     throw new Problem("cricket is only for Boys, Girls and Male Faculty");
+  }
+  if (sport === "basketball" && category !== "" && !BASKETBALL_CATEGORIES.includes(category)) {
+    throw new Problem("basketball is only for Boys and Girls");
   }
 
   const teamA = text(body.teamA, "Team A");
@@ -114,6 +120,10 @@ function parseMatch(body) {
     };
     const problem = volleyball.checkConfig(config);
     if (problem) throw new Problem(problem);
+  } else if (sport === "basketball") {
+    // college rule, not editable: 7 min quarters up to the quarter final, 10 min in the semi final and final.
+    // Only shown on the pages (no clock). Anything the page sends in config is ignored.
+    config = { quarterMinutes: basketball.collegeQuarterMinutes(stage), overtimeMinutes: basketball.normalizeConfig({}).overtimeMinutes };
   }
 
   let scorers;
@@ -215,7 +225,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         sport: m.sport,
         bestOf: m.best_of,
         config: m.sport === "cricket" ? cricket.normalizeConfig(m.config)
-              : m.sport === "volleyball" ? volleyball.normalizeConfig(m.config) : {},
+              : m.sport === "volleyball" ? volleyball.normalizeConfig(m.config)
+              : m.sport === "basketball" ? basketball.normalizeConfig(m.config) : {},
         teamA: m.team_a,
         teamB: m.team_b,
         competition: m.competition,
@@ -286,6 +297,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         const ev = await client.query("SELECT count(*)::int AS n FROM events WHERE match_id = $1", [id]);
         if (ev.rows[0].n > 0) {
           const old = cur.rows[0];
+          // basketball is not in this list on purpose: its minutes follow the stage and are only shown,
+          // they never change the score, so fixing the stage of a started match is allowed.
           const sameSettings =
             old.sport === m.sport &&
             old.best_of === m.bestOf &&

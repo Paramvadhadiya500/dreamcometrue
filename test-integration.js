@@ -423,6 +423,29 @@ test("9. join-match with a malformed id is ignored: no answer, the viewer keeps 
   assert.strictEqual((await next).matchId, other);
 });
 
+test("9b. basketball: 1/2/3 points, end_period is stored (migration 007), quarter 4 not level ends the match", async () => {
+  const match = "it-" + RUN + "-bb";
+  await pool.query("INSERT INTO matches (id, name, sport, config) VALUES ($1, 'Integration bb', 'basketball', $2)",
+    [match, JSON.stringify({ quarterMinutes: 7, overtimeMinutes: 5 })]);
+  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ('it_scorer1', $1)", [match]);
+  const s1 = await scorer("it_scorer1");
+
+  let a = await act(s1, match, point("A", 3));
+  assert.strictEqual(a.ok, true, JSON.stringify(a));
+  a = await act(s1, match, point("B", 4));
+  assert.deepStrictEqual([a.ok, a.error], [false, "points must be 1, 2 or 3"]);
+  for (let q = 0; q < 3; q++) {
+    a = await act(s1, match, { id: newId(), type: "end_period" });
+    assert.strictEqual(a.ok, true, "end_period must be accepted by the database: " + JSON.stringify(a));
+  }
+  assert.deepStrictEqual([a.state.period, a.state.periodName, a.state.periodMinutes], [4, "Quarter 4", 7]);
+  a = await act(s1, match, point("B", 1));
+  a = await act(s1, match, { id: newId(), type: "end_period" });
+  assert.deepStrictEqual([a.state.status, a.state.winner, a.state.scoreA, a.state.scoreB], ["finished", "A", 3, 1]);
+  assert.match(a.state.resultText, /won 3-1$/);
+  assert.strictEqual(await rowCount("SELECT count(*) AS n FROM events WHERE match_id = $1 AND type = 'end_period'", [match]), 4);
+});
+
 test("10. SIGTERM (what Docker sends on stop/restart): the server closes cleanly and exits 0 within 3 s", async () => {
   if (process.platform === "win32") {
     console.log("     (skipped on Windows: it has no SIGTERM; GitHub and the Linux container run this case)");

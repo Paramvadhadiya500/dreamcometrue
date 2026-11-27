@@ -38,7 +38,7 @@ async function main() {
 
   if (!a.id || !/^[a-z0-9-]{1,30}$/.test(a.id)) throw new Error("--id is required: lowercase letters, digits and dashes, up to 30 characters");
   if (!a.name || a.name.length > 80) throw new Error("--name is required (up to 80 characters)");
-  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket, volleyball");
+  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket, volleyball, basketball");
 
   let config = {};
   let bestOf = 3;
