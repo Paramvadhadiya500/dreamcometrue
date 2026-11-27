@@ -9,11 +9,18 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-28 - Basketball fixes (7196b5c) pushed; all 4 CI jobs green
+- **What:** `git push` of `7196b5c` (`71416b9..7196b5c`). NOT deployed yet (the server runs `ef727f2`).
+- **Checked:** GitHub Actions run 46058027297 for `7196b5c`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API).
+- **Next (by hand, when the user decides):** deploy without a migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose up -d`; then every scorer reloads the scorer page.
+- **Undo:** see the entry below.
+
 ## 2026-11-28 - Basketball fixes before the event: readable buttons, END QUARTER once per quarter, corrections
 - **What:** fixes #1, #2, #4 of the event review (list in the review, kept in Claude's notes). (1) `public/scorer.html`: the team name is shown once above its row (coloured A blue / B orange) and the buttons show only "+1 +2 +3" (before: "Computer Scie… +3", the number was cut off on a phone). (2) `engines/basketball.js`: `end_period` may carry `data:{period:n}`; refused with "Quarter 1 has already ended" if that quarter is over ("has not started yet" if ahead); stored cleaned; without data still allowed (an old open page). The scorer page sends the quarter number and counts END QUARTER presses still waiting on the phone (a waiting UNDO cancels the one before it), so the button says "END QUARTER 2" at once, even offline. (4) `point` value -1/-2/-3 = correction (counts in the current quarter, a team total never below 0; refused "cannot take away 3 points: Team A has only 2"); scorer page "Fix a mistake (take points away)" opens -1/-2/-3 per team with a "CORRECTION: ..." confirm. `audit.js`: history "-1 for CSE (correction)", "End Quarter 1" / "End Overtime 1". No database change (no migration).
 - **Why:** before the event: a scorer could not see +2 vs +3 with long names; a double press (slow network, offline, two scorers) skipped a quarter; a wrong basket that is not the last action could not be fixed without undoing everything after it.
 - **Checked:** laptop. `node test.js`: All tests passed (new: corrections, quarter numbers, 400 random games with corrections and old END QUARTER presses, history texts, scorer page offline/reload/undo counting). Throwaway test Postgres + Redis: `npx playwright test` 70 passed (new `e2e/scorer-basketball.spec.js`: real scorer page at 360 px with long team names, every number fully visible and >= 44 px tall, END QUARTER, a second scorer's END QUARTER 1 refused, correction). `node test-integration.js` all passed (9b expected the old error text; updated).
-- **NOT checked:** a real phone; the server.
+- **Also checked:** the user tested it on the laptop dev server with a phone (+3, a -1 correction, END QUARTER pressed twice): "everything works".
+- **NOT checked:** the server.
 - **Good to know:** the quarter scores can show a negative number when a correction fixes an earlier quarter (the totals are right). The error texts from the server say "Team A" / "Team B", not the real names.
 - **Deploy (when the user decides):** no migration, no Redis flush: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose up -d`. Scorers should reload the scorer page after the deploy (an old open page still works, without the new protection).
 - **Undo:** `git revert <this commit>` and deploy. Corrections already stored would then be ignored by the old engine (it skips values that are not 1-3), so the totals would go UP again: undo them on the phone first.
