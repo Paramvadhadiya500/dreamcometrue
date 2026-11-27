@@ -8,6 +8,7 @@ const volleyball = require("./engines/volleyball");
 const { buildHistory } = require("./audit");
 const { CATEGORIES, STAGES } = require("./categories");
 const { competitionOf } = require("./standings");
+const { effectivePoints } = require("./engine");
 
 const CRICKET_CATEGORIES = Object.keys(cricket.COLLEGE_OVERS);   // boys, girls, male_faculty
 
@@ -124,6 +125,20 @@ function parseMatch(body) {
   }
 
   return { name, sport, competition, category, stage, teamA, teamB, venue, startTime, bestOf, config, scorers };
+}
+
+// A match is LIVE when scoring has begun (any event) and its state is not finished.
+// Same state as the server shows (engine.compute on the events after undo, like buildState in server.js).
+// When in doubt (unknown sport, engine error) it counts as live: then a delete is refused, never a wrong delete.
+function matchIsLive(match, events) {
+  if (!events || events.length === 0) return false;
+  const engine = getEngine(match.sport);
+  if (!engine) return true;
+  try {
+    return engine.compute(effectivePoints(events), match).status !== "finished";
+  } catch (e) {
+    return true;
+  }
 }
 
 function checkMatchId(id) {
@@ -382,7 +397,50 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
     res.json({ ok: true, username, active });
   }));
 
+  // ----- delete a scorer (refused while they are assigned to a LIVE match) -----
+  // Their scores stay: events.by_user is plain text. Logins, sockets and actions check the users table
+  // every time, so a deleted scorer's phone is refused at once.
+  router.delete("/users/:username", wrap(async (req, res) => {
+    const username = checkUsername(req.params.username);
+    const client = await pool.connect();
+    let removedFrom = [];
+    try {
+      await client.query("BEGIN");
+      try {
+        const u = await client.query("SELECT username FROM users WHERE username = $1 AND role = 'scorer' FOR UPDATE", [username]);
+        if (u.rowCount === 0) throw new Problem("scorer not found", 404);
+
+        // lock the scorer's matches (the same lock a scoring action takes), so no ball slips in between
+        const ms = await client.query(
+          `SELECT m.id, m.name, m.sport, m.best_of, m.config FROM matches m
+           JOIN match_scorers s ON s.match_id = m.id
+           WHERE s.username = $1 ORDER BY m.id FOR UPDATE OF m`,
+          [username]
+        );
+        for (const m of ms.rows) {
+          const ev = await client.query("SELECT seq, type, team, value, data FROM events WHERE match_id = $1 ORDER BY seq", [m.id]);
+          if (matchIsLive(m, ev.rows)) {
+            throw new Problem(username + " is scoring a live match (" + m.name + "). Finish it first, or assign another scorer to it.", 409);
+          }
+        }
+
+        await client.query("DELETE FROM match_scorers WHERE username = $1", [username]);
+        await client.query("DELETE FROM users WHERE username = $1 AND role = 'scorer'", [username]);
+        await client.query("COMMIT");
+        removedFrom = ms.rows.map((m) => m.id);
+        console.log("admin", req.user.username, "deleted scorer", username, "(was assigned to", removedFrom.length, "matches)");
+      } catch (e) {
+        await client.query("ROLLBACK");
+        throw e;
+      }
+    } finally {
+      client.release();
+    }
+    for (const id of removedFrom) await afterMatchChange(id);
+    res.json({ ok: true, username, removedFrom });
+  }));
+
   return router;
 }
 
-module.exports = { createAdminRouter, parseMatch };
+module.exports = { createAdminRouter, parseMatch, matchIsLive };

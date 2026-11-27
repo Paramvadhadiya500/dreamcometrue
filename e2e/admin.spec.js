@@ -287,4 +287,25 @@ test.describe("admin page (today's behaviour)", () => {
     await expect(row).toContainText("Active · 0 matches");
     expect(await tryLogin(second)).toBe(200);
   });
+
+  test("scorers: Delete asks first (Cancel keeps), then removes the scorer", async ({ page }) => {
+    const seen = answerDialogs(page, [false, true]);
+    const name = ("e2d_" + RUN).slice(0, 20);
+    await login(page);
+    await page.getByRole("button", { name: "Scorers" }).click();
+    await page.locator("#newUser").fill(name);
+    await page.getByRole("button", { name: "Create" }).click();
+    await expect(page.locator("#secret .good")).toContainText("Password for " + name + ":");
+    const row = page.locator("#scorerList .row", { has: page.locator(".title", { hasText: new RegExp("^" + name + "$") }) });
+
+    await row.getByRole("button", { name: "Delete" }).click();         // Cancel
+    await expect.poll(() => seen.length).toBe(1);
+    await expect(row).toBeVisible();
+    expect(seen[0]).toBe("confirm: Delete scorer " + name + "?\nScores they entered stay in the history. This cannot be undone.");
+
+    await row.getByRole("button", { name: "Delete" }).click();         // OK
+    await expect(row).toHaveCount(0);
+    await expect(page.locator("#secret .good")).toHaveCount(0, { timeout: 1000 });   // its password box is cleared
+    await expect(page.locator("#newErr")).toHaveText("");
+  });
 });

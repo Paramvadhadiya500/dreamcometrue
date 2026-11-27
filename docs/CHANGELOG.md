@@ -9,6 +9,15 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-27 - Admin page: delete a scorer (refused while they have a live match)
+- **What:** `admin.js`: new route `DELETE /api/admin/users/:username` (scorers only). In one transaction it locks the scorer and their assigned matches (`FOR UPDATE`, the same lock a scoring action takes), refuses with 409 "<name> is scoring a live match (<match>). Finish it first, or assign another scorer to it." if one of them has scores and is not finished, else deletes the assignments and the user, then refreshes those matches. New helper `matchIsLive(match, events)` (unknown sport or engine error counts as live, so the delete is refused rather than wrong). `public/js/admin.js`: red "Delete" button on each scorer row with a confirm box; a shown password of that scorer is cleared. Tests: `test.js` (`matchIsLive` for simple, cricket, table tennis), new `e2e/scorer-delete.spec.js` (real server + database), `e2e/admin.spec.js` (Delete: Cancel keeps, OK removes). No database change.
+- **Why:** old scorer accounts could only be disabled, so the Scorers list and the match form's checkbox list kept growing.
+- **Checked:** laptop. `node test.js`: All tests passed (Node 26 and Node 22.23 in Docker). Test Postgres + Redis: `node test-integration.js` all passed; `npx playwright test` 67 passed (65 old + 2 new). The real-server test: delete refused during a live match (nothing removed), allowed after finish; the user and both assignments gone; the events still have `by_user` and the admin History shows the name; the deleted scorer's open socket gets "not allowed", a new login 401, the old token "invalid token"; admin accounts and a second delete give 404.
+- **NOT checked:** the server; a real phone.
+- **Good to know:** a NEW scorer with the SAME name later would share the name in old histories (names are stored, not accounts).
+- **Deploy (when the user decides):** no migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose up -d`.
+- **Undo:** `git revert <this commit>` and deploy. Deleted accounts can't be brought back by the revert; create them again with `add-user.js` (new password).
+
 ## 2026-11-27 - Deployed college rules + toss on the server (by hand): migrations 005 and 006 applied
 - **What:** deploy of `eff3859` (includes `af4fa84`) by the user on the server: `docker compose run --rm app node migrate.js`, then `docker compose up -d` (app container re-created).
 - **Checked:** `migrate.js` printed "applied 005_category_and_rounds.sql", "applied 006_toss.sql", "Database is up to date". `up -d`: db and redis healthy, app started, caddy running. The user tested the site after the deploy: "it works perfectly".

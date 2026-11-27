@@ -78,7 +78,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   `GET /api/my-matches` (scorer/admin; the scorer page polls it every 30 s), `/api/admin/*` (admin only, JWT in the Authorization header,
   checked against the database on every request), `GET /api/matches` (old, cached 10 s), `GET /health`. Unknown /api paths answer JSON 404.
 - Admin API: GET /overview; POST /matches; PUT /matches/:id; DELETE /matches/:id (a match with scores needs body {confirm:"DELETE"});
-  POST /users (creates a scorer, returns a generated password ONCE); POST /users/:u/reset; POST /users/:u/active {active}.
+  POST /users (creates a scorer, returns a generated password ONCE); POST /users/:u/reset; POST /users/:u/active {active}; DELETE /users/:u (scorers only; refused 409 while assigned to a LIVE match; removes the assignments; their scores stay, events.by_user is text).
   Scorers/admins are separate: the API only manages scorers. Create admins with add-user.js. Sport and settings of a match with scores are locked (409).
   After an admin change the server clears the Redis state, rebuilds it and pushes it to open pages (so new team names appear at once).
 - Team names: matches.team_a / team_b; the state has teamA / teamB ("Team A"/"Team B" when empty). Cricket result text has the real names.

@@ -155,8 +155,11 @@ function renderScorers() {
     reset.onclick = () => resetPassword(u.username);
     const toggle = el("button", u.active ? "Disable" : "Enable", u.active ? "danger" : "");
     toggle.onclick = () => setActive(u.username, !u.active);
+    const del = el("button", "Delete", "danger");
+    del.onclick = () => deleteScorer(u);
     actions.appendChild(reset);
     actions.appendChild(toggle);
+    actions.appendChild(del);
     row.appendChild(actions);
     box.appendChild(row);
   }
@@ -426,6 +429,23 @@ async function resetPassword(username) {
   try {
     const r = await api("POST", "/users/" + encodeURIComponent(username) + "/reset");
     showSecret(r.username, r.password);
+    await load();
+  } catch (e) {
+    $("newErr").textContent = e.message;
+  }
+}
+
+// The server refuses while the scorer is assigned to a live match (the message says which one).
+async function deleteScorer(u) {
+  const assigned = u.matches > 0
+    ? " They are assigned to " + u.matches + (u.matches === 1 ? " match" : " matches") + " (they will be removed from " + (u.matches === 1 ? "it" : "them") + ")."
+    : "";
+  if (!confirm("Delete scorer " + u.username + "?" + assigned + "\nScores they entered stay in the history. This cannot be undone.")) return;
+  $("newErr").textContent = "";
+  try {
+    await api("DELETE", "/users/" + encodeURIComponent(u.username));
+    // a password still shown for THIS scorer is useless now (one shown for another scorer stays)
+    if ($("secret").textContent.includes("Password for " + u.username + ":")) $("secret").textContent = "";
     await load();
   } catch (e) {
     $("newErr").textContent = e.message;

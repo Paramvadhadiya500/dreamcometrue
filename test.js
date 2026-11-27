@@ -1273,6 +1273,24 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(parseMatch({ sport: "simple", teamA: "X", teamB: "Y", category: "mix", competition: "Chess" }).name, "Chess (Mix): X vs Y");
 }
 
+// ---------- admin API: is a match live? (a scorer of a live match cannot be deleted) ----------
+{
+  const { matchIsLive } = require("./admin");
+  const sm = { sport: "simple", config: {}, best_of: 3 };
+  const cr = { sport: "cricket", config: { overs: 2, players: 4 }, best_of: 3 };
+  const tt = { sport: "table_tennis", config: {}, best_of: 3 };
+  const pt = (team) => ({ type: "point", team, value: 1, data: null });
+  assert.strictEqual(matchIsLive(sm, []), false, "not started");
+  assert.strictEqual(matchIsLive(sm, [pt("A")]), true, "a point: live");
+  assert.strictEqual(matchIsLive(sm, [pt("A"), { type: "finish" }]), false, "finished");
+  assert.strictEqual(matchIsLive(sm, [pt("A"), { type: "finish" }, { type: "undo" }]), true, "finish undone: live again");
+  assert.strictEqual(matchIsLive(sm, [pt("A"), { type: "undo" }]), true, "everything undone but scoring began: still treated as live");
+  assert.strictEqual(matchIsLive(cr, [{ type: "toss", data: { winner: "A", choice: "bat" } }]), true, "cricket: the toss is enough");
+  assert.strictEqual(matchIsLive(cr, [{ type: "finish" }]), false, "cricket: abandoned");
+  assert.strictEqual(matchIsLive(tt, [...Array(22)].map((_, i) => pt(i % 2 ? "B" : "A"))), true, "table tennis 11-11");
+  assert.strictEqual(matchIsLive({ sport: "no_such_sport", config: {} }, [pt("A")]), true, "unknown sport: be safe, say live");
+}
+
 // ---------- admin page: no inline code (Phase 8; a CSP would block it) ----------
 {
   const fs = require("fs");
