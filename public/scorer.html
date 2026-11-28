@@ -45,6 +45,22 @@
   #crToss .q { font-size: 18px; font-weight: bold; margin: 10px 6px 0; }
   #crToss button.on { background: #fc6; border: 3px solid #c80; }
   #tossStart { width: 92%; background: #cfc; }
+  /* kabaddi: the raid form (one raid = 4 taps + SAVE RAID) */
+  .kbQ { font-size: 17px; font-weight: bold; margin: 12px 2% 0; }
+  .kbTwo button { width: 45%; font-size: 17px; padding: 14px 4px; margin: 4px 1.5%; min-height: 56px; overflow-wrap: anywhere; vertical-align: top; }
+  .kbOuts button { width: 22%; font-size: 26px; font-weight: bold; padding: 12px 0; margin: 3px 1%; }
+  #kbControls button.on { background: #fc6; border: 3px solid #c80; }
+  #kbSummary { font-size: 19px; font-weight: bold; min-height: 26px; padding: 8px 12px 0; }
+  #kbSave { width: 92%; background: #cfc; font-size: 26px; }
+  #kbEnd { width: 92%; background: #fe9; }
+  #kbControls .small { width: 45%; font-size: 15px; padding: 10px; }
+  #kbControls #kbOver, #kbControls #kbFixBtn { width: 92%; }
+  #kbBreakText { width: 92%; margin: 4px 2%; box-sizing: border-box; }
+  #kbControls #kbBreakBtn { width: 92%; }
+  #kbFix { border: 2px solid #c33; border-radius: 6px; margin: 6px 2%; padding-bottom: 6px; }
+  #kbFix .kbTwo button { background: #fdd; font-size: 16px; min-height: 48px; }
+  #kbBreakNow { background: #fd8; padding: 6px 10px; font-weight: bold; text-align: center; margin: 4px 0; }
+  #kbCourt { font-size: 17px; font-weight: bold; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -79,6 +95,15 @@
       <h1><span id="bbA">0</span> : <span id="bbB">0</span></h1>
       <div id="bbPeriod" class="vs"></div>
       <div id="bbQuarters" class="hint"></div>
+    </div>
+    <div id="kbView" style="display:none">
+      <div class="vs" id="kbNames"></div>
+      <h1><span id="kbA">0</span> : <span id="kbB">0</span></h1>
+      <div id="kbHalf" class="vs"></div>
+      <div id="kbCourt"></div>
+      <div id="kbHalves" class="hint"></div>
+      <div id="kbBreakNow" style="display:none"></div>
+      <div id="kbLast" class="hint"></div>
     </div>
     <div id="crView" style="display:none">
       <h1 id="crBig" style="margin:6px 0"></h1>
@@ -146,6 +171,46 @@
     <div>
       <button class="small names" id="bbFinA" onclick="finishWithWinner('A')">Finish: Team A wins</button>
       <button class="small names" id="bbFinB" onclick="finishWithWinner('B')">Finish: Team B wins</button>
+    </div>
+  </div>
+
+  <!-- kabaddi: one raid = who raided, the raider safe or OUT, defenders out, bonus; then SAVE RAID -->
+  <div id="kbControls" style="display:none">
+    <div id="kbTie" style="display:none">
+      <div class="kbQ">Level after 2 halves. Who won the tie-break (5 raids each, then the golden raid)?</div>
+      <div class="kbTwo"><button class="teamA" id="kbTieA" onclick="tieBreakWinner('A')">Team A</button><button class="teamB" id="kbTieB" onclick="tieBreakWinner('B')">Team B</button></div>
+    </div>
+    <div id="kbPlay">
+      <div class="kbQ">1. Who raided?</div>
+      <div class="kbTwo"><button class="teamA" id="kbRaidA" onclick="pickRaid('team','A')">Team A</button><button class="teamB" id="kbRaidB" onclick="pickRaid('team','B')">Team B</button></div>
+      <div class="kbQ">2. The raider</div>
+      <div class="kbTwo"><button id="kbSafe" onclick="pickRaid('caught',false)">Came back safe</button><button id="kbCaught" onclick="pickRaid('caught',true)">Raider OUT</button></div>
+      <div class="kbQ">3. Defenders out (touched or stepped out)</div>
+      <div class="kbOuts"><button id="kbOut0" onclick="pickRaid('out',0)">0</button><button id="kbOut1" onclick="pickRaid('out',1)">1</button><button id="kbOut2" onclick="pickRaid('out',2)">2</button><button id="kbOut3" onclick="pickRaid('out',3)">3</button><button id="kbOut4" onclick="pickRaid('out',4)">4</button><button id="kbOut5" onclick="pickRaid('out',5)">5</button><button id="kbOut6" onclick="pickRaid('out',6)">6</button><button id="kbOut7" onclick="pickRaid('out',7)">7</button></div>
+      <div class="kbQ">4. Bonus point</div>
+      <div class="kbTwo"><button id="kbBonusNo" onclick="pickRaid('bonus',false)">No bonus</button><button id="kbBonusYes" onclick="pickRaid('bonus',true)">BONUS +1</button></div>
+      <div id="kbSummary"></div>
+      <div id="kbStale" class="hint"></div>
+      <button id="kbSave" onclick="saveRaid()" disabled>SAVE RAID</button>
+      <div id="kbSent" class="hint"></div>
+      <button id="kbEnd" onclick="endHalf()">END HALF 1</button>
+      <div class="kbQ">Breaks (shown on the match page, no points)</div>
+      <div class="kbTwo"><button class="teamA" id="kbToA" onclick="kbTimeout('A')">Timeout: Team A</button><button class="teamB" id="kbToB" onclick="kbTimeout('B')">Timeout: Team B</button></div>
+      <input id="kbBreakText" maxlength="40" placeholder="Other break, e.g. Water break">
+      <button class="small" id="kbBreakBtn" onclick="otherBreak()">Show this break</button>
+      <button class="small" id="kbOver" onclick="breakOver()">Break over</button>
+      <div><button class="small" id="kbFixBtn" onclick="toggleKbFix()">Fix a mistake (points, players on court)</button></div>
+      <div id="kbFix" style="display:none">
+        <div class="hint">Only to correct a wrong entry. The last entry? Use UNDO instead.</div>
+        <div class="bbTeam teamA" id="kbFixNameA">Team A</div>
+        <div class="kbTwo"><button id="kbTechA" onclick="kbTechnical('A')">Technical point +1</button><button id="kbMinusA" onclick="kbMinus('A')">Take 1 point away</button></div>
+        <div class="kbTwo"><button id="kbCourtDownA" onclick="kbCourtFix('A',-1)">Players on court -1</button><button id="kbCourtUpA" onclick="kbCourtFix('A',1)">Players on court +1</button></div>
+        <div class="bbTeam teamB" id="kbFixNameB">Team B</div>
+        <div class="kbTwo"><button id="kbTechB" onclick="kbTechnical('B')">Technical point +1</button><button id="kbMinusB" onclick="kbMinus('B')">Take 1 point away</button></div>
+        <div class="kbTwo"><button id="kbCourtDownB" onclick="kbCourtFix('B',-1)">Players on court -1</button><button id="kbCourtUpB" onclick="kbCourtFix('B',1)">Players on court +1</button></div>
+      </div>
+      <div class="kbQ">End the match early (walkover)</div>
+      <div class="kbTwo"><button id="kbFinA" onclick="finishWithWinner('A')">Finish: Team A wins</button><button id="kbFinB" onclick="finishWithWinner('B')">Finish: Team B wins</button></div>
     </div>
   </div>
 
@@ -306,16 +371,20 @@
     }
   }
 
-  // basketball: END QUARTER entries of this match still waiting on this phone (offline or slow server).
+  // the types of this match's entries still waiting on this phone (offline or slow server), oldest first.
   // An UNDO that is still waiting cancels the waiting entry before it (the same rule as the server's undo).
-  function waitingEnds(matchId) {
-    if (!session) return 0;
+  function waitingTypes(matchId) {
+    if (!session) return [];
     const stack = [];
     for (const x of q.pending(session.username)) {
       if (x.matchId !== matchId) continue;
       if (x.type === "undo") stack.pop(); else stack.push(x.type);
     }
-    return stack.filter((t) => t === "end_period").length;
+    return stack;
+  }
+  // basketball and kabaddi: END QUARTER / END HALF entries of this match still waiting on this phone
+  function waitingEnds(matchId) {
+    return waitingTypes(matchId).filter((t) => t === "end_period").length;
   }
   const periodNameOf = (p) => (p <= 4 ? "Quarter " + p : "Overtime " + (p - 4));
 
@@ -363,6 +432,179 @@
     act("point", team, -n);
   }
 
+  // ---------- kabaddi: one raid at a time (rules in engines/kabaddi.js; the server checks every entry again) ----------
+  const kbFresh = () => ({ team: null, caught: false, out: 0, bonus: false });
+  let kbPick = kbFresh();
+  const sportOf = {};                     // matchId -> sport, for the texts of waiting / rejected entries
+  const KB_BREAK_OK = /^[\p{L}\p{M}\p{N} .,'!?:()\/-]+$/u;   // the same rule as the server
+  const otherTeam = (t) => (t === "A" ? "B" : "A");
+  const onCourt = (s, t) => (t === "A" ? s.onCourtA : s.onCourtB);
+
+  // the half this phone is in: the server's half + END HALF presses not sent yet (3 = the end of half 2 is waiting)
+  function phoneHalf(s) { return s.half + waitingEnds(s.matchId); }
+
+  // "CSE raid: 2 out + bonus", "Raid by team A: raider OUT"
+  function raidWords(label, d) {
+    let t = d.caught ? "raider OUT" : d.out > 0 ? d.out + " out" : d.bonus ? "" : "empty raid";
+    if (d.bonus) t += (t ? " + " : "") + "bonus";
+    return label + ": " + t;
+  }
+
+  // what SAVE RAID will give. exact = no entries of this match are waiting, so the players on court are up to date
+  // (then ALL OUT and SUPER TACKLE can be predicted; the server works them out anyway).
+  function raidSummary(s, p, exact) {
+    if (!p.team) return "Tap who raided";
+    const R = teamName(s, p.team), D = teamName(s, otherTeam(p.team));
+    if (p.caught) {
+      const sup = exact && onCourt(s, otherTeam(p.team)) <= 3;
+      const all = exact && onCourt(s, p.team) === 1;
+      let t = "Raider OUT: " + D + " +" + ((sup ? 2 : 1) + (all ? 2 : 0));
+      if (sup) t += " SUPER TACKLE";
+      if (all) t += (sup ? " + " : " ") + "ALL OUT";
+      if (p.bonus) t += ", " + R + " +1 bonus";
+      return t;
+    }
+    if (p.out === 0 && !p.bonus) return "Empty raid: no points";
+    const all = exact && p.out > 0 && p.out === onCourt(s, otherTeam(p.team));
+    const parts = [];
+    if (p.out) parts.push(p.out + " out");
+    if (p.bonus) parts.push("bonus");
+    if (all) parts.push("ALL OUT +2");
+    return R + " +" + (p.out + (p.bonus ? 1 : 0) + (all ? 2 : 0)) + " (" + parts.join(" + ") + ")";
+  }
+
+  // the break banner: "HALF TIME", "TIMEOUT: CSE", "BREAK: Rain delay" ("" = none)
+  function kbBreakText(s) {
+    const b = s.breakNow;
+    if (!b) return "";
+    if (b.kind === "half_time") return "HALF TIME";
+    if (b.kind === "timeout") return "TIMEOUT: " + teamName(s, b.team);
+    return "BREAK: " + b.text;
+  }
+
+  function pickRaid(key, value) {
+    kbPick[key] = value;
+    if (key === "caught" && value) kbPick.out = 0;      // the players a caught raider touched are not out
+    updateKabaddiUI();
+  }
+
+  // buttons, limits and the summary line from the last state this phone knows + entries still waiting
+  function updateKabaddiUI() {
+    const s = lastState;
+    if (!s || s.sport !== "kabaddi") return;
+    const waiting = waitingTypes(s.matchId);
+    const exact = waiting.length === 0;
+    const half = phoneHalf(s);
+    $("kbHalf").textContent = s.status === "finished" ? "" : s.needsTiebreak ? "Tie-break" : "Half " + Math.min(half, 2) + " (" + s.halfMinutes + " min)";
+    $("kbEnd").textContent = half > 2 ? "END HALF 2 is waiting to be sent" : "END HALF " + half;
+    $("kbEnd").disabled = half > 2;
+    $("kbStale").textContent = exact ? "" : waiting.length + (waiting.length === 1 ? " entry is" : " entries are") +
+      " still waiting to be sent, so the players on court may be old. The server checks every raid.";
+
+    const p = kbPick;
+    const defenders = p.team && exact ? onCourt(s, otherTeam(p.team)) : 7;
+    if (p.caught || p.out > defenders) p.out = 0;
+    const bonusOk = defenders >= 6;
+    if (!bonusOk) p.bonus = false;
+    $("kbRaidA").className = "teamA" + (p.team === "A" ? " on" : "");
+    $("kbRaidB").className = "teamB" + (p.team === "B" ? " on" : "");
+    $("kbSafe").className = p.caught ? "" : "on";
+    $("kbCaught").className = p.caught ? "on" : "";
+    for (let n = 0; n <= 7; n++) {
+      $("kbOut" + n).disabled = p.caught ? n > 0 : n > defenders;
+      $("kbOut" + n).className = n === p.out ? "on" : "";
+    }
+    $("kbBonusNo").className = p.bonus ? "" : "on";
+    $("kbBonusYes").className = p.bonus ? "on" : "";
+    $("kbBonusYes").disabled = !bonusOk;
+    $("kbSummary").textContent = raidSummary(s, p, exact);
+    $("kbSave").disabled = !p.team;
+    $("kbOver").disabled = !s.breakNow && !waiting.includes("break");
+  }
+
+  function saveRaid() {
+    const s = lastState;
+    // no timer against double taps: after a save the form is fresh (no team), so a second tap on SAVE does nothing,
+    // and a fast scorer's next raid is never dropped
+    if (!s || s.sport !== "kabaddi" || !kbPick.team) return;
+    const data = { team: kbPick.team, out: kbPick.caught ? 0 : kbPick.out, bonus: kbPick.bonus, caught: kbPick.caught };
+    act("raid", undefined, undefined, data);
+    $("kbSent").textContent = "Sent: " + raidWords(teamName(s, data.team) + " raid", data);
+    kbPick = kbFresh();
+    updateKabaddiUI();
+  }
+
+  // END HALF: says what will happen; the half number goes with it (a second press cannot skip a half)
+  function endHalf() {
+    const s = lastState;
+    if (!s || s.sport !== "kabaddi") return;
+    const p = phoneHalf(s);
+    if (p > 2) return;
+    let text = "End Half " + p + "?";
+    if (p === 1) text += " Half time starts.";
+    else if (s.scoreA !== s.scoreB) {
+      const w = s.scoreA > s.scoreB ? "A" : "B";
+      text += " This ENDS THE MATCH: " + teamName(s, w) + " wins " + Math.max(s.scoreA, s.scoreB) + "-" + Math.min(s.scoreA, s.scoreB) + ".";
+    } else if (s.knockout) text += " The score is level: next you enter the tie-break winner.";
+    else text += " The score is level: the match ends as a DRAW.";
+    if (confirm(text + " You can still press UNDO afterwards.")) act("end_period", null, null, { period: p });
+  }
+
+  function tieBreakWinner(team) {
+    const s = lastState;
+    if (!s) return;
+    if (confirm(teamName(s, team) + " won the tie-break? This ENDS THE MATCH. You can still press UNDO afterwards.")) {
+      act("finish", null, null, { winner: team });
+    }
+  }
+
+  // breaks: shown on the match page only, never scored
+  function kbTimeout(team) {
+    const s = lastState;
+    if (!s) return;
+    const used = team === "A" ? s.timeoutsA : s.timeoutsB;
+    if (used >= 2 && !confirm(teamName(s, team) + " already had " + used + " timeouts in this half (AKFI allows 2 of 30 seconds). Show another timeout?")) return;
+    act("break", undefined, undefined, { kind: "timeout", team });
+  }
+
+  function otherBreak() {
+    const raw = String($("kbBreakText").value);
+    const text = raw.replace(/ +/g, " ").trim();
+    if (/[\u0000-\u001f\u007f]/.test(raw) || !text || text.length > 40 || !KB_BREAK_OK.test(text)) {
+      $("err").textContent = "Break text: 1 to 40 letters, numbers, spaces and . , ' ! ? : ( ) / -";
+      return;
+    }
+    act("break", undefined, undefined, { kind: "other", text });
+    $("kbBreakText").value = "";
+  }
+
+  function breakOver() { act("break", undefined, undefined, { kind: "over" }); }
+
+  // corrections: hidden behind "Fix a mistake"; each asks first
+  function toggleKbFix() {
+    $("kbFix").style.display = $("kbFix").style.display === "block" ? "none" : "block";
+  }
+  function kbFixDone(question, send) {
+    if (!confirm(question + " You can still press UNDO afterwards.")) return;
+    $("kbFix").style.display = "none";
+    send();
+  }
+  function kbTechnical(team) {
+    const s = lastState;
+    if (s) kbFixDone("TECHNICAL POINT: +1 for " + teamName(s, team) + "?", () => act("point", team, 1));
+  }
+  function kbMinus(team) {
+    const s = lastState;
+    if (s) kbFixDone("CORRECTION: take 1 point away from " + teamName(s, team) + "? Use this only to fix a wrong entry.", () => act("point", team, -1));
+  }
+  function kbCourtFix(team, change) {
+    const s = lastState;
+    if (!s) return;
+    const n = onCourt(s, team);
+    kbFixDone("Players on court for " + teamName(s, team) + ": " + n + " -> " + (n + change) + "? (no points; for cards, injuries or a wrong entry)",
+      () => act("court", undefined, undefined, { team, change }));
+  }
+
   // sends the first waiting entry. force = called by the retry timer or a fresh connection;
   // a normal tap does not jump the waiting time after a failure.
   function flush(force) {
@@ -395,7 +637,10 @@
       if (x.type === "ball" && x.data) t = describe(x.data);
       else if (x.type === "point" && x.value < 0) t = x.value + " for team " + x.team + " (correction)";
       else if (x.type === "point") t = "+" + (x.value || 1) + " for team " + x.team;
-      else if (x.type === "end_period" && x.data && x.data.period >= 1) t = "End " + periodNameOf(x.data.period);
+      else if (x.type === "end_period" && x.data && x.data.period >= 1) t = "End " + (sportOf[x.matchId] === "kabaddi" ? "Half " + x.data.period : periodNameOf(x.data.period));
+      else if (x.type === "raid" && x.data) t = raidWords("Raid by team " + x.data.team, x.data);
+      else if (x.type === "court" && x.data) t = "Players on court for team " + x.data.team + ": " + (x.data.change > 0 ? "+1" : "-1");
+      else if (x.type === "break" && x.data) t = x.data.kind === "timeout" ? "Break: timeout team " + x.data.team : x.data.kind === "other" ? "Break: " + x.data.text : "Break over";
       else if (x.type === "undo") t = "UNDO";
       else if (x.type === "finish") t = "Finish match" + (x.data && x.data.winner ? " (team " + x.data.winner + " wins)" : "");
       else if (x.type === "end_innings") t = "End innings";
@@ -639,6 +884,7 @@
     }
 
     updateBasketballUI();                                      // an END QUARTER just pressed (or just sent) moves the button on
+    updateKabaddiUI();                                         // END HALF, and the raid limits while entries wait
   }
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
@@ -659,14 +905,18 @@
     const isVB = s.sport === "volleyball";
     const isCR = s.sport === "cricket";
     const isBB = s.sport === "basketball";
-    const isSimple = !isTT && !isCR && !isVB && !isBB;
+    const isKB = s.sport === "kabaddi";
+    const isSimple = !isTT && !isCR && !isVB && !isBB && !isKB;
+    sportOf[s.matchId] = s.sport;
     $("ttView").style.display = isTT || isVB ? "block" : "none";
     $("simpleView").style.display = isSimple ? "block" : "none";
     $("crView").style.display = isCR ? "block" : "none";
     $("bbView").style.display = isBB ? "block" : "none";
+    $("kbView").style.display = isKB ? "block" : "none";
     $("ttControls").style.display = isTT || isVB ? "block" : "none";
     $("simpleControls").style.display = isSimple ? "block" : "none";
     $("bbControls").style.display = isBB && s.status !== "finished" ? "block" : "none";
+    $("kbControls").style.display = isKB && s.status !== "finished" ? "block" : "none";
     const needToss = isCR && s.status !== "finished" && !!s.needsToss && !tossWaiting(s.matchId);
     if (needToss && $("crToss").style.display !== "block") tossPick = { winner: null, choice: null };   // a fresh box
     $("crToss").style.display = needToss ? "block" : "none";
@@ -714,6 +964,32 @@
       updateBasketballUI();                                    // quarter label + END button (counts waiting presses)
       $("bbFinA").textContent = "Finish: " + shortName(nameA) + " wins";
       $("bbFinB").textContent = "Finish: " + shortName(nameB) + " wins";
+    } else if (isKB) {
+      $("kbNames").textContent = nameA + " vs " + nameB;
+      for (const [t, name] of [["A", nameA], ["B", nameB]]) {
+        $("kbRaid" + t).textContent = name;                    // full name: the button grows, nothing is cut off
+        $("kbTie" + t).textContent = name;
+        $("kbTo" + t).textContent = "Timeout: " + name;          // full names: two similar names must stay different
+        $("kbFixName" + t).textContent = name;
+        $("kbFin" + t).textContent = "Finish: " + name + " wins";
+      }
+      $("kbA").textContent = s.scoreA;
+      $("kbB").textContent = s.scoreB;
+      $("kbCourt").textContent = "On court: " + nameA + " " + s.onCourtA + " · " + nameB + " " + s.onCourtB;
+      const parts = (s.halves || []).map((h, i) => "H" + (i + 1) + " " + h[0] + "-" + h[1]);
+      if (s.status !== "finished" && !s.needsTiebreak && (s.halves.length > 0 || s.currentA || s.currentB)) {
+        parts.push("H" + s.half + " " + s.currentA + "-" + s.currentB + " (now)");
+      }
+      $("kbHalves").textContent = parts.join(" · ");
+      const brk = kbBreakText(s);
+      $("kbBreakNow").textContent = brk;
+      $("kbBreakNow").style.display = brk ? "block" : "none";
+      const r = s.lastRaid;
+      $("kbLast").textContent = r ? "Last raid: " + raidWords(teamName(s, r.team) + " raid", r) +
+        (r.superTackle ? " (SUPER TACKLE)" : "") + (r.allOut ? " (ALL OUT)" : "") : "";
+      $("kbTie").style.display = s.needsTiebreak ? "block" : "none";
+      $("kbPlay").style.display = s.needsTiebreak ? "none" : "block";
+      updateKabaddiUI();
     } else if (isCR) {
       showCricket(s);
       if (needToss) {
@@ -736,7 +1012,7 @@
   }
 
   function hideAllViews() {
-    for (const id of ["ttView", "simpleView", "crView", "bbView", "ttControls", "simpleControls", "bbControls", "crToss", "crControls", "undoRow"]) {
+    for (const id of ["ttView", "simpleView", "crView", "bbView", "kbView", "ttControls", "simpleControls", "bbControls", "kbControls", "crToss", "crControls", "undoRow"]) {
       $(id).style.display = "none";
     }
   }
@@ -785,6 +1061,9 @@
     mode = null;
     lastState = null;
     tossPick = { winner: null, choice: null };
+    kbPick = kbFresh();
+    $("kbSent").textContent = "";
+    $("kbFix").style.display = "none";
     $("crLast").textContent = "";
     $("name").textContent = "Loading...";
     join();

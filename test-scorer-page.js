@@ -387,5 +387,235 @@ const blockedTest = (async () => {
   ok("basketball: +1/+2/+3, End quarter confirm texts, overtime, finish, finished screen");
 }
 
+// ---- 11. kabaddi: the raid form, its limits and summary, END HALF, breaks, fixes, tie-break ----
+{
+  const kabaddi = require("./engines/kabaddi");
+  const { effectivePoints } = require("./engine");
+  let version = 0;
+  const GROUP = { halfMinutes: 15, knockout: false };
+  const KO = { halfMinutes: 15, knockout: true };
+  const kbState = (events, config = GROUP) => ({ matchId: "m1", name: "Match 1", sport: "kabaddi", teamA: "CSE", teamB: "ECE",
+    ...kabaddi.compute(effectivePoints(events), { config }), version: ++version });
+  const R = (team, out = 0, bonus = false, caught = false) => ({ type: "raid", data: { team, out, bonus, caught } });
+  const END = (n) => ({ type: "end_period", data: { period: n } });
+  const BRK = (data) => ({ type: "break", data });
+  const shown = (w, id) => w.el(id).style.display === "block";
+  const last = (w) => JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.team, w.sent[0].payload.value, w.sent[0].payload.data]);
+  const text = (w, id) => w.el(id).textContent;
+
+  const w = makeWorld({ preset: { "scorer-session": session } });
+  w.connect();
+  w.ctx.showState(kbState([]));
+  assert.ok(shown(w, "kbView") && shown(w, "kbControls") && shown(w, "kbPlay") && !shown(w, "kbTie"), "kabaddi view and raid form");
+  assert.ok(!shown(w, "bbControls") && !shown(w, "simpleControls") && !shown(w, "simpleView"), "no other sport's buttons");
+  assert.deepStrictEqual([text(w, "kbRaidA"), text(w, "kbRaidB"), text(w, "kbFinB"), text(w, "kbToA")], ["CSE", "ECE", "Finish: ECE wins", "Timeout: CSE"]);
+  assert.deepStrictEqual([text(w, "kbHalf"), text(w, "kbEnd"), text(w, "kbCourt")], ["Half 1 (15 min)", "END HALF 1", "On court: CSE 7 · ECE 7"]);
+  assert.strictEqual(text(w, "kbSummary"), "Tap who raided");
+  assert.strictEqual(w.el("kbSave").disabled, true, "SAVE RAID waits for the raiding team");
+  w.ctx.saveRaid();
+  assert.strictEqual(w.sent.length, 0);
+
+  // a raid: CSE raids, 2 out + bonus
+  w.ctx.pickRaid("team", "A"); w.ctx.pickRaid("out", 2); w.ctx.pickRaid("bonus", true);
+  assert.deepStrictEqual([w.el("kbRaidA").className, w.el("kbRaidB").className, w.el("kbOut2").className, w.el("kbBonusYes").className],
+    ["teamA on", "teamB", "on", "on"], "the chosen buttons are marked");
+  assert.strictEqual(text(w, "kbSummary"), "CSE +3 (2 out + bonus)");
+  w.ctx.saveRaid();
+  assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "A", out: 2, bonus: true, caught: false }]));
+  assert.strictEqual(text(w, "kbSent"), "Sent: CSE raid: 2 out + bonus");
+  assert.strictEqual(text(w, "kbSummary"), "Tap who raided", "the form is fresh for the next raid");
+  assert.ok(text(w, "kbStale").startsWith("1 entry is still waiting to be sent"), text(w, "kbStale"));
+  assert.strictEqual(w.el("kbSave").disabled, true, "after a save SAVE RAID is closed until a team is chosen");
+  w.ctx.saveRaid();
+  assert.strictEqual(w.sent.length, 1, "a double tap on SAVE RAID sends the raid once");
+  w.ctx.pickRaid("team", "B");
+  w.ctx.saveRaid();
+  assert.strictEqual(text(w, "pending"), "2 entries waiting to be sent", "a fast next raid is NOT dropped (no timer)");
+  w.ack({ ok: true });
+  assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "B", out: 0, bonus: false, caught: false }]), "then it is sent");
+  w.ack({ ok: true });
+  assert.strictEqual(text(w, "kbStale"), "", "all sent: the numbers are up to date again");
+
+  // the server's new state: ECE has 5 on court
+  w.ctx.showState(kbState([R("A", 2, true)]));
+  assert.deepStrictEqual([text(w, "kbCourt"), text(w, "kbHalves"), text(w, "kbLast"), text(w, "kbA")],
+    ["On court: CSE 7 · ECE 5", "H1 3-0 (now)", "Last raid: CSE raid: 2 out + bonus", "3"]);
+  w.ctx.pickRaid("team", "A");
+  assert.deepStrictEqual([w.el("kbOut5").disabled, w.el("kbOut6").disabled, w.el("kbOut7").disabled], [false, true, true], "ECE has only 5 on court");
+  assert.strictEqual(w.el("kbBonusYes").disabled, true, "no bonus with fewer than 6 defenders");
+  w.ctx.pickRaid("team", "B");
+  assert.deepStrictEqual([w.el("kbOut7").disabled, w.el("kbBonusYes").disabled], [false, false], "CSE has 7");
+  w.ctx.pickRaid("out", 7); w.ctx.pickRaid("bonus", true);
+  assert.strictEqual(text(w, "kbSummary"), "ECE +10 (7 out + bonus + ALL OUT +2)", "the biggest raid");
+  w.ctx.pickRaid("team", "A");
+  assert.deepStrictEqual([w.el("kbOut0").className, w.el("kbBonusNo").className], ["on", "on"], "7 out and bonus are reset: ECE has only 5");
+  w.ctx.pickRaid("out", 5);
+  assert.strictEqual(text(w, "kbSummary"), "CSE +7 (5 out + ALL OUT +2)");
+  w.ctx.pickRaid("caught", true);
+  assert.strictEqual(w.el("kbOut0").className, "on", "raider OUT: nobody he touched is out");
+  for (let n = 1; n <= 7; n++) assert.strictEqual(w.el("kbOut" + n).disabled, true, "out " + n + " closed when the raider is OUT");
+  assert.strictEqual(text(w, "kbSummary"), "Raider OUT: ECE +1");
+  w.ctx.pickRaid("caught", false);
+  assert.strictEqual(w.el("kbOut1").disabled, false);
+  assert.strictEqual(text(w, "kbSummary"), "Empty raid: no points");
+
+  // super tackle + all out predicted: ECE has 3 on court, CSE has 1
+  w.ctx.showState(kbState([R("A", 4), ...Array(6).fill({ type: "court", data: { team: "A", change: -1 } })]));
+  w.ctx.pickRaid("caught", true);
+  assert.strictEqual(text(w, "kbSummary"), "Raider OUT: ECE +4 SUPER TACKLE + ALL OUT");
+  w.ctx.pickRaid("team", "B");
+  w.ctx.pickRaid("bonus", true);
+  assert.strictEqual(text(w, "kbSummary"), "Raider OUT: CSE +2 SUPER TACKLE", "CSE (1 on court) tackles: super tackle; no bonus with 1 defender");
+  assert.strictEqual(w.el("kbBonusNo").className, "on");
+  // bonus + raider OUT (the referee gave the bonus first): both shown
+  w.ctx.showState(kbState([]));
+  w.ctx.pickRaid("team", "A"); w.ctx.pickRaid("bonus", true); w.ctx.pickRaid("caught", true);
+  assert.strictEqual(text(w, "kbSummary"), "Raider OUT: ECE +1, CSE +1 bonus");
+  w.ctx.saveRaid();
+  assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "A", out: 0, bonus: true, caught: true }]));
+  assert.strictEqual(text(w, "kbSent"), "Sent: CSE raid: raider OUT + bonus");
+  w.ack({ ok: true });
+  w.advance(700);
+
+  // END HALF: asks first and says what happens
+  w.setConfirm(false);
+  w.ctx.showState(kbState([R("A", 3), END(1), R("B", 1)]));
+  assert.deepStrictEqual([text(w, "kbHalf"), text(w, "kbEnd"), text(w, "kbHalves")], ["Half 2 (15 min)", "END HALF 2", "H1 3-0 · H2 0-1 (now)"]);
+  w.ctx.endHalf();
+  assert.strictEqual(w.confirms.at(-1), "End Half 2? This ENDS THE MATCH: CSE wins 3-1. You can still press UNDO afterwards.");
+  assert.strictEqual(w.sent.length, 0, "Cancel sends nothing");
+  w.ctx.showState(kbState([R("A", 1), R("B", 1), END(1)]));
+  w.ctx.endHalf();
+  assert.ok(w.confirms.at(-1).includes("The score is level: the match ends as a DRAW."), w.confirms.at(-1));
+  w.ctx.showState(kbState([R("A", 1), R("B", 1), END(1)], KO));
+  w.ctx.endHalf();
+  assert.ok(w.confirms.at(-1).includes("The score is level: next you enter the tie-break winner."), w.confirms.at(-1));
+  w.ctx.showState(kbState([]));
+  w.setConfirm(true);
+  w.ctx.endHalf();
+  assert.strictEqual(w.confirms.at(-1), "End Half 1? Half time starts. You can still press UNDO afterwards.");
+  assert.strictEqual(last(w), JSON.stringify(["end_period", null, null, { period: 1 }]));
+  assert.strictEqual(text(w, "kbEnd"), "END HALF 2", "the button moves on at once");
+  w.ack({ ok: true });
+  w.ctx.showState(kbState([END(1)]));
+  assert.ok(shown(w, "kbBreakNow") && text(w, "kbBreakNow") === "HALF TIME", "half time banner");
+
+  // tie-break: a level knockout match asks only for the winner
+  const levelKO = [R("A", 1), R("B", 1), END(1), END(2)];
+  w.ctx.showState(kbState(levelKO, KO));
+  assert.ok(shown(w, "kbControls") && shown(w, "kbTie") && !shown(w, "kbPlay"), "only the tie-break question");
+  assert.deepStrictEqual([text(w, "kbHalf"), text(w, "kbTieA"), text(w, "kbTieB"), text(w, "kbHalves")], ["Tie-break", "CSE", "ECE", "H1 1-1 · H2 0-0"]);
+  w.setConfirm(false); w.ctx.tieBreakWinner("B");
+  assert.strictEqual(w.confirms.at(-1), "ECE won the tie-break? This ENDS THE MATCH. You can still press UNDO afterwards.");
+  assert.strictEqual(w.sent.length, 0);
+  w.setConfirm(true); w.ctx.tieBreakWinner("B");
+  assert.strictEqual(last(w), JSON.stringify(["finish", null, null, { winner: "B" }]));
+  w.ack({ ok: true });
+  w.ctx.showState(kbState([...levelKO, { type: "finish", data: { winner: "B" } }], KO));
+  assert.ok(!shown(w, "kbControls") && shown(w, "undoRow"), "finished: only UNDO");
+  assert.strictEqual(text(w, "status"), "FINISHED. Team B won on tie-break (1-1)");
+
+  // breaks: timeout (asks only from the 3rd in a half), other text, break over
+  w.ctx.showState(kbState([]));
+  assert.deepStrictEqual([w.el("kbOver").disabled, shown(w, "kbBreakNow")], [true, false], "no break on: Break over is closed");
+  const asked = w.confirms.length;
+  w.ctx.kbTimeout("A");
+  assert.strictEqual(w.confirms.length, asked, "the 1st timeout needs no question");
+  assert.strictEqual(last(w), JSON.stringify(["break", null, null, { kind: "timeout", team: "A" }]));
+  assert.strictEqual(w.el("kbOver").disabled, false, "a break is waiting to be sent: Break over can be pressed");
+  w.ack({ ok: true });
+  w.ctx.showState(kbState([BRK({ kind: "timeout", team: "A" }), BRK({ kind: "timeout", team: "A" })]));
+  assert.strictEqual(text(w, "kbBreakNow"), "TIMEOUT: CSE");
+  w.setConfirm(false); w.ctx.kbTimeout("A");
+  assert.strictEqual(w.confirms.at(-1), "CSE already had 2 timeouts in this half (AKFI allows 2 of 30 seconds). Show another timeout?");
+  assert.strictEqual(w.sent.length, 0);
+  w.setConfirm(true);
+  w.ctx.breakOver();
+  assert.strictEqual(last(w), JSON.stringify(["break", null, null, { kind: "over" }]));
+  w.ack({ ok: true });
+  w.el("kbBreakText").value = "  Water   break ";
+  w.ctx.otherBreak();
+  assert.strictEqual(last(w), JSON.stringify(["break", null, null, { kind: "other", text: "Water break" }]));
+  assert.strictEqual(w.el("kbBreakText").value, "", "the box is emptied");
+  w.ack({ ok: true });
+  for (const bad of ["", "   ", "<b>tea</b>", "x".repeat(41), "tea & coffee", "a\nb"]) {
+    w.el("kbBreakText").value = bad;
+    w.el("err").textContent = "";
+    w.ctx.otherBreak();
+    assert.strictEqual(w.sent.length, 0, "not sent: " + JSON.stringify(bad));
+    assert.strictEqual(text(w, "err"), "Break text: 1 to 40 letters, numbers, spaces and . , ' ! ? : ( ) / -");
+  }
+  w.ctx.showState(kbState([BRK({ kind: "other", text: "Rain delay" })]));
+  assert.strictEqual(text(w, "kbBreakNow"), "BREAK: Rain delay");
+
+  // fix a mistake: hidden until asked for; each asks first, then closes
+  assert.ok(!shown(w, "kbFix"));
+  w.ctx.toggleKbFix();
+  assert.ok(shown(w, "kbFix"));
+  assert.deepStrictEqual([text(w, "kbFixNameA"), text(w, "kbFixNameB")], ["CSE", "ECE"]);
+  w.setConfirm(false); w.ctx.kbTechnical("A");
+  assert.strictEqual(w.confirms.at(-1), "TECHNICAL POINT: +1 for CSE? You can still press UNDO afterwards.");
+  assert.ok(w.sent.length === 0 && shown(w, "kbFix"), "Cancel: nothing sent, the box stays open");
+  w.setConfirm(true); w.ctx.kbTechnical("A");
+  assert.strictEqual(last(w), JSON.stringify(["point", "A", 1, null]));
+  assert.ok(!shown(w, "kbFix"), "the box closes after one use");
+  w.ack({ ok: true });
+  w.ctx.toggleKbFix(); w.ctx.kbMinus("B");
+  assert.ok(w.confirms.at(-1).startsWith("CORRECTION: take 1 point away from ECE?"), w.confirms.at(-1));
+  assert.strictEqual(last(w), JSON.stringify(["point", "B", -1, null]));
+  w.ack({ ok: true });
+  w.ctx.toggleKbFix(); w.ctx.kbCourtFix("A", -1);
+  assert.ok(w.confirms.at(-1).startsWith("Players on court for CSE: 7 -> 6?"), w.confirms.at(-1));
+  assert.strictEqual(last(w), JSON.stringify(["court", null, null, { team: "A", change: -1 }]));
+  w.ack({ ok: true });
+
+  // the texts of waiting / rejected entries
+  const et = (x) => w.ctx.entryText({ matchId: "m1", ...x });
+  assert.strictEqual(et(R("A", 2, true)), "Match 1: Raid by team A: 2 out + bonus");
+  assert.strictEqual(et(R("B", 0, false, true)), "Match 1: Raid by team B: raider OUT");
+  assert.strictEqual(et(R("B")), "Match 1: Raid by team B: empty raid");
+  assert.strictEqual(et({ type: "court", data: { team: "A", change: -1 } }), "Match 1: Players on court for team A: -1");
+  assert.strictEqual(et(BRK({ kind: "timeout", team: "B" })), "Match 1: Break: timeout team B");
+  assert.strictEqual(et(BRK({ kind: "other", text: "Rain delay" })), "Match 1: Break: Rain delay");
+  assert.strictEqual(et(BRK({ kind: "over" })), "Match 1: Break over");
+  assert.strictEqual(et(END(1)), "Match 1: End Half 1", "a kabaddi match: half, not quarter");
+
+  // offline: the limits open (the phone's numbers may be old) and END HALF counts the presses not sent yet
+  const w2 = makeWorld({ preset: { "scorer-session": session } });
+  w2.connect();
+  w2.ctx.showState(kbState([R("A", 2)]));                        // ECE has 5
+  w2.disconnect();
+  w2.ctx.pickRaid("team", "B"); w2.ctx.pickRaid("out", 1); w2.ctx.saveRaid();
+  w2.advance(700);
+  w2.ctx.pickRaid("team", "A");
+  assert.deepStrictEqual([w2.el("kbOut7").disabled, w2.el("kbBonusYes").disabled], [false, false],
+    "entries wait: the phone does not know the players on court, the server checks the raid");
+  w2.ctx.pickRaid("out", 5);
+  assert.strictEqual(text(w2, "kbSummary"), "CSE +5 (5 out)", "no ALL OUT guessed from old numbers");
+  w2.setConfirm(true);
+  w2.ctx.endHalf();
+  assert.deepStrictEqual([text(w2, "kbEnd"), text(w2, "kbHalf")], ["END HALF 2", "Half 2 (15 min)"]);
+  w2.ctx.endHalf();
+  assert.ok(w2.confirms.at(-1).startsWith("End Half 2?"));
+  assert.deepStrictEqual([text(w2, "kbEnd"), w2.el("kbEnd").disabled], ["END HALF 2 is waiting to be sent", true]);
+  const n = w2.confirms.length;
+  w2.ctx.endHalf();
+  assert.strictEqual(w2.confirms.length, n, "no third END HALF");
+  w2.ctx.act("undo");                                             // takes the waiting END HALF 2 back
+  assert.deepStrictEqual([text(w2, "kbEnd"), w2.el("kbEnd").disabled], ["END HALF 2", false]);
+  w2.connect();
+  const types = [];
+  while (w2.sent.length) { const p = w2.ack({ ok: true }); types.push(p.type + (p.data && p.data.period ? p.data.period : "")); }
+  assert.deepStrictEqual(types, ["raid", "end_period1", "end_period2", "undo"], "sent in order, with the half numbers");
+
+  // another match chosen: the kabaddi screen and the half-filled form go away
+  w.ctx.pickRaid("team", "A");
+  w.el("match").onchange();
+  assert.ok(!shown(w, "kbView") && !shown(w, "kbControls"));
+  w.ctx.showState(kbState([]));
+  assert.strictEqual(text(w, "kbSummary"), "Tap who raided", "a fresh form");
+  ok("kabaddi: raid form, limits, summary, END HALF, tie-break, breaks, fixes, offline");
+}
+
 await blockedTest;
 };

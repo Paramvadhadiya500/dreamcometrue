@@ -34,6 +34,6 @@ input.wide, select.wide { width: 100%; }
 
 /* These were style="..." attributes in admin.html (a CSP blocks those too).
    Hidden at start; admin.js shows them with el.style.display = "block", which still wins over this rule. */
-#loginBox, #app, #formBox, #lockNote, #ttGroup, #vbGroup, #bbGroup, #historyBox, #scorersTab { display: none; }
+#loginBox, #app, #formBox, #lockNote, #ttGroup, #vbGroup, #bbGroup, #kbGroup, #historyBox, #scorersTab { display: none; }
 .box h2, .box h3 { margin-top: 0; }
 #who { color: #cde; }
