@@ -3,6 +3,7 @@
 // Examples:
 //   node add-match.js --id cr-1 --name "Cricket: A vs B" --sport cricket --overs 5 --players 6 --first A --scorer rahul
 //   node add-match.js --id kb-2 --name "Kabaddi: G vs H" --sport kabaddi --scorer rahul   (halves 15 min, group match)
+//   node add-match.js --id fb-2 --name "Football: G vs H" --sport football --scorer rahul (6-a-side, 2 x 15 min, group match)
 //   node add-match.js --id tt-3 --name "Table Tennis: E vs F" --sport table_tennis --bestof 5 --scorer neha
 //
 //   node add-match.js --id vb-4 --name "Volleyball: C vs D" --sport volleyball --bestof 5 --scorer neha   (--bestof 3 or 5, default 3)
@@ -38,7 +39,7 @@ async function main() {
 
   if (!a.id || !/^[a-z0-9-]{1,30}$/.test(a.id)) throw new Error("--id is required: lowercase letters, digits and dashes, up to 30 characters");
   if (!a.name || a.name.length > 80) throw new Error("--name is required (up to 80 characters)");
-  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket, volleyball, basketball, kabaddi");
+  if (!a.sport || !getEngine(a.sport)) throw new Error("--sport must be one of: table_tennis, simple, cricket, volleyball, basketball, kabaddi, football");
 
   let config = {};
   let bestOf = 3;

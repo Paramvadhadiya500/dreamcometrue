@@ -1134,6 +1134,9 @@ const { FailureLimiter } = require("./rateLimit");
 // ======================= Kabaddi (AKFI: 2 halves, raids, all out, super tackle) =======================
 require("./test-kabaddi")();
 
+// ======================= Football (IFAB + college: goals, penalties, cards, extra time, shootout) =======================
+require("./test-football")();
+
 // ======================= Startup guard: JWT_SECRET =======================
 const { checkJwtSecret, DEV_SECRET } = require("./config");
 {
@@ -1397,6 +1400,31 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual([hk2[2].text, hk2[2].undone], ["Raid started: ECE", false]);
   assert.deepStrictEqual([hk2[1].undone, hk2[1].undoneBySeq, hk2[3].text], [true, 3, "UNDO (cancels: Raid by CSE: 1 out)"]);
   assert.strictEqual(hk2[4].text, "Raid cancelled");
+
+  // football: every action in words, and the score after it (seq comes as TEXT from Postgres: the engine copes)
+  const fbCfg = { config: { halfMinutes: 15, players: 6, knockout: true } };
+  const fbList = [{ type: "period_start", data: { period: 1 } },                                 // 1
+    { type: "goal", data: { team: "A", kind: "normal", shirt: 9, name: "Rahul" } },             // 2
+    { type: "goal", data: { team: "B", kind: "own_goal", shirt: 4 } },                          // 3
+    { type: "card", data: { team: "B", color: "yellow", shirt: 5 } },                           // 4
+    { type: "penalty_start", data: { team: "B" } },                                             // 5
+    { type: "penalty", data: { team: "B", outcome: "saved" } },                                 // 6
+    { type: "remove", data: { seq: 3 } },                                                       // 7
+    { type: "end_period", data: { period: 1 } }, { type: "period_start", data: { period: 2 } },  // 8, 9
+    { type: "goal", data: { team: "B", kind: "free_kick", shirt: 7 } },                         // 10
+    { type: "end_period", data: { period: 2 } }, { type: "extra_time" },                        // 11, 12
+    { type: "end_period", data: { period: 3 } }, { type: "period_start", data: { period: 4 } },  // 13, 14
+    { type: "end_period", data: { period: 4 } }, { type: "shootout_start", data: { kicks: 3, first: "B" } },   // 15, 16
+    { type: "kick", data: { team: "B", outcome: "scored" } }];                                   // 17
+  const hf = bySeq(hist("football", fbList.map((e, i) => ({ ...e, seq: String(i + 1) })), fbCfg));
+  assert.deepStrictEqual(Object.values(hf).sort((a, b) => a.seq - b.seq).map((r) => r.text), [
+    "Kick-off: 1st half", "GOAL CSE #9 Rahul", "GOAL ECE #4 (own goal)", "Yellow card ECE #5", "Penalty to ECE",
+    "Penalty ECE: saved", "Remove entry #3", "End 1st half", "Kick-off: 2nd half", "GOAL ECE #7 (free kick)", "End 2nd half",
+    "Extra time", "End Extra time 1st half", "Kick-off: Extra time 2nd half", "End Extra time 2nd half",
+    "Penalty shootout: 3 kicks each, ECE first", "Shootout kick ECE: scored"]);
+  assert.deepStrictEqual([hf[3].after, hf[7].after, hf[8].after, hf[11].after, hf[12].after, hf[17].after],
+    ["CSE 1-1 ECE (H1)", "CSE 1-0 ECE (H1)", "CSE 1-0 ECE (half time)", "CSE 1-1 ECE (full time)", "CSE 1-1 ECE (extra time)",
+      "CSE 1-1 ECE (penalties 0-1)"]);
 
   // table tennis: a point has no value
   const h5 =hist("table_tennis", [{ type: "point", team: "A" }]);
@@ -1695,6 +1723,18 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(parseMatch(kbBody({ category: "" })).config.halfMinutes, 15, "scripts may leave the category empty: Boys numbers");
   for (const category of ["male_faculty", "female_faculty", "mix"]) {
     assert.match(problem(kbBody({ category })), /kabaddi is only for Boys and Girls/);
+  }
+  // football: only Boys (6-a-side, 2 x 15) and Girls (5-a-side, 2 x 7), every stage the same; knockout from the stage
+  const fbBody = (o) => ({ sport: "football", teamA: "CSE", teamB: "ME", category: "boys", stage: "group", ...o });
+  assert.deepStrictEqual(parseMatch(fbBody({})).config, { halfMinutes: 15, players: 6, knockout: false }, "boys group: a draw is possible");
+  assert.deepStrictEqual(parseMatch(fbBody({ stage: "final" })).config, { halfMinutes: 15, players: 6, knockout: true }, "the final is not longer");
+  assert.deepStrictEqual(parseMatch(fbBody({ category: "girls" })).config, { halfMinutes: 7, players: 5, knockout: false });
+  assert.deepStrictEqual(parseMatch(fbBody({ category: "girls", stage: "semi_final" })).config, { halfMinutes: 7, players: 5, knockout: true });
+  assert.deepStrictEqual(parseMatch(fbBody({ config: { halfMinutes: 45, players: 11, knockout: true } })).config,
+    { halfMinutes: 15, players: 6, knockout: false }, "settings sent by the page are ignored");
+  assert.strictEqual(parseMatch(fbBody({ category: "" })).config.players, 6, "scripts may leave the category empty: Boys numbers");
+  for (const category of ["male_faculty", "female_faculty", "mix"]) {
+    assert.match(problem(fbBody({ category })), /football is only for Boys and Girls/);
   }
   // bad values are refused
   assert.match(problem(crBody({ category: "staff" })), /category/);

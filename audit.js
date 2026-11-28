@@ -44,9 +44,34 @@ function kabaddiText(e, names) {
   return null;                      // the same words as the other sports
 }
 
+// football actions in words (same wording as the scorer page)
+const FB_PERIODS = ["1st half", "2nd half", "Extra time 1st half", "Extra time 2nd half"];
+const FB_KINDS = { normal: "", free_kick: " (free kick)", own_goal: " (own goal)" };
+function footballText(e, names) {
+  const d = e.data && typeof e.data === "object" ? e.data : {};
+  const n = (t) => names[t] || t;
+  const who = d.shirt ? " #" + d.shirt + (d.name ? " " + d.name : "") : "";
+  const half = FB_PERIODS[d.period - 1];
+  if (e.type === "period_start" && half) return "Kick-off: " + half;
+  if (e.type === "end_period" && half) return "End " + half;
+  if (e.type === "goal") return "GOAL " + n(d.team) + who + (FB_KINDS[d.kind] || "");
+  if (e.type === "penalty_start") return d.cancel ? "Penalty cancelled" : "Penalty to " + n(d.team);
+  if (e.type === "penalty") return "Penalty " + n(d.team) + ": " + d.outcome + who;
+  if (e.type === "card") return (d.color === "red" ? "Red" : "Yellow") + " card " + n(d.team) + who;
+  if (e.type === "extra_time") return "Extra time";
+  if (e.type === "shootout_start") return "Penalty shootout: " + d.kicks + " kicks each, " + n(d.first) + " first";
+  if (e.type === "kick") return "Shootout kick " + n(d.team) + ": " + d.outcome;
+  if (e.type === "remove") return "Remove entry #" + d.seq;
+  return null;                      // the same words as the other sports
+}
+
 function actionText(e, names, sport) {
   if (sport === "kabaddi") {
     const t = kabaddiText(e, names);
+    if (t) return t;
+  }
+  if (sport === "football") {
+    const t = footballText(e, names);
     if (t) return t;
   }
   if (e.type === "point" && Number.isInteger(e.value) && e.value < 0) {

@@ -7,6 +7,7 @@ const cricket = require("./engines/cricket");
 const volleyball = require("./engines/volleyball");
 const basketball = require("./engines/basketball");
 const kabaddi = require("./engines/kabaddi");
+const football = require("./engines/football");
 const { buildHistory } = require("./audit");
 const { CATEGORIES, STAGES } = require("./categories");
 const { competitionOf } = require("./standings");
@@ -32,7 +33,12 @@ const KABADDI_CATEGORIES = ["boys", "girls"];
 const KABADDI_MINUTES = Object.fromEntries(KABADDI_CATEGORIES.map((c) =>
   [c, Object.fromEntries(Object.keys(STAGES).map((s) => [s, kabaddi.collegeHalfMinutes(c, s)]))]));
 
-const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", kabaddi: "kb", simple: "sm" };
+// football: { boys: { minutes: 15, players: 6 }, girls: { minutes: 7, players: 5 } } (college rule, every stage the same)
+const FOOTBALL_CATEGORIES = ["boys", "girls"];
+const FOOTBALL_FORMAT = Object.fromEntries(FOOTBALL_CATEGORIES.map((c) =>
+  [c, { minutes: football.collegeHalfMinutes(c), players: football.collegePlayers(c) }]));
+
+const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", kabaddi: "kb", football: "fb", simple: "sm" };
 
 class Problem extends Error {
   constructor(message, status = 400) {
@@ -77,6 +83,9 @@ function parseMatch(body) {
   }
   if (sport === "kabaddi" && category !== "" && !KABADDI_CATEGORIES.includes(category)) {
     throw new Problem("kabaddi is only for Boys and Girls");
+  }
+  if (sport === "football" && category !== "" && !FOOTBALL_CATEGORIES.includes(category)) {
+    throw new Problem("football is only for Boys and Girls");
   }
 
   const teamA = text(body.teamA, "Team A");
@@ -139,6 +148,11 @@ function parseMatch(body) {
     // college rule, not editable: half minutes from category + stage (display only, no clock);
     // knockout from the stage: a level knockout match needs a tie-break winner, a level group match is a draw.
     config = { halfMinutes: kabaddi.collegeHalfMinutes(category, stage), knockout: kabaddi.isKnockoutStage(stage) };
+  } else if (sport === "football") {
+    // college rule, not editable: Boys 6-a-side 2 x 15, Girls 5-a-side 2 x 7 (display only, no clock);
+    // knockout from the stage: a level knockout match goes to extra time or penalties, a level group match is a draw.
+    config = { halfMinutes: football.collegeHalfMinutes(category), players: football.collegePlayers(category),
+      knockout: football.isKnockoutStage(stage) };
   }
 
   let scorers;
@@ -242,7 +256,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         config: m.sport === "cricket" ? cricket.normalizeConfig(m.config)
               : m.sport === "volleyball" ? volleyball.normalizeConfig(m.config)
               : m.sport === "basketball" ? basketball.normalizeConfig(m.config)
-              : m.sport === "kabaddi" ? kabaddi.normalizeConfig(m.config) : {},
+              : m.sport === "kabaddi" ? kabaddi.normalizeConfig(m.config)
+              : m.sport === "football" ? football.normalizeConfig(m.config) : {},
         teamA: m.team_a,
         teamB: m.team_b,
         competition: m.competition,
@@ -265,6 +280,7 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
       collegeOvers: OVERS_TABLE,                 // the admin form fills the overs from this (same numbers as the server)
       basketballMinutes: BASKETBALL_MINUTES,     // the admin form shows the quarter length from this
       kabaddiMinutes: KABADDI_MINUTES,           // the admin form shows the half length from this
+      footballFormat: FOOTBALL_FORMAT,           // the admin form shows "6-a-side, 2 x 15 min" from this
     });
   }));
 
@@ -323,7 +339,9 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
             (m.sport !== "cricket" || JSON.stringify(cricket.normalizeConfig(old.config)) === JSON.stringify(m.config)) &&
             (m.sport !== "volleyball" || JSON.stringify(volleyball.normalizeConfig(old.config)) === JSON.stringify(m.config)) &&
             // kabaddi: the minutes may change (shown only), but group <-> knockout may not: it decides draw or tie-break
-            (m.sport !== "kabaddi" || kabaddi.normalizeConfig(old.config).knockout === m.config.knockout);
+            (m.sport !== "kabaddi" || kabaddi.normalizeConfig(old.config).knockout === m.config.knockout) &&
+            // football: same rule (group = draw allowed, knockout = extra time / penalties)
+            (m.sport !== "football" || football.normalizeConfig(old.config).knockout === m.config.knockout);
           if (!sameSettings) throw new Problem("scoring has started, so the sport and its settings can no longer be changed", 409);
         }
 

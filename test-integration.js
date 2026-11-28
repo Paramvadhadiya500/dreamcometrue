@@ -501,6 +501,53 @@ test("9d. kabaddi: raid_start stored (migration 009), UNDO skips it, a do-or-die
   assert.deepStrictEqual([a.state.scoreB, a.state.onCourtA, a.state.lastRaid.doOrDieOut], [1, 6, true]);
 });
 
+test("9e. football: every new type is stored (migration 010), remove uses the real seq, knockout -> shootout -> winner", async () => {
+  const match = "it-" + RUN + "-fb";
+  await pool.query("INSERT INTO matches (id, name, sport, config) VALUES ($1, 'Integration fb', 'football', $2)",
+    [match, JSON.stringify({ halfMinutes: 7, players: 5, knockout: true })]);
+  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ('it_scorer1', $1)", [match]);
+  const s1 = await scorer("it_scorer1");
+  const send = (type, data) => act(s1, match, { id: newId(), type, ...(data ? { data } : {}) });
+  const ok = (a, what) => assert.strictEqual(a.ok, true, what + " must be accepted by the database: " + JSON.stringify(a));
+
+  let a = await send("goal", { team: "A", kind: "normal", shirt: 9 });
+  assert.deepStrictEqual([a.ok, a.error], [false, "tap KICK-OFF first"]);
+  ok(await send("period_start", { period: 1 }), "period_start");
+  a = await send("goal", { team: "A", kind: "normal", shirt: 9, name: " Rahul ", junk: "x" });
+  ok(a, "goal");
+  ok(await send("goal", { team: "B", kind: "own_goal", shirt: 4 }), "goal 2");
+  ok(await send("card", { team: "B", color: "yellow", shirt: 5 }), "card");
+  ok(await send("penalty_start", { team: "B" }), "penalty_start");
+  a = await send("penalty", { team: "B", outcome: "scored", shirt: 10 });
+  ok(a, "penalty");
+  assert.deepStrictEqual([a.state.scoreA, a.state.scoreB, a.state.penaltyNow], [1, 2, null], "penalty scored: a goal, banner gone");
+  const stored = await pool.query("SELECT seq, type, team, value, data FROM events WHERE match_id = $1 AND type = 'goal' ORDER BY seq", [match]);
+  assert.deepStrictEqual(stored.rows[0].data, { team: "A", kind: "normal", shirt: 9, name: "Rahul" }, "cleaned: name trimmed, junk dropped");
+  // take out the own goal with the seq the database gave it
+  const ownGoal = Number(stored.rows[1].seq);
+  assert.ok(a.state.removable.includes(ownGoal));
+  a = await send("remove", { seq: ownGoal });
+  ok(a, "remove");
+  assert.deepStrictEqual([a.state.scoreA, a.state.scoreB], [1, 1]);
+  ok(await send("end_period", { period: 1 }), "end_period");
+  a = await send("end_period", { period: 1 });
+  assert.deepStrictEqual([a.ok, a.error], [false, "1st half has already ended"], "a double press cannot end the 2nd half");
+  ok(await send("period_start", { period: 2 }), "kick-off 2");
+  a = await send("end_period", { period: 2 });
+  assert.deepStrictEqual([a.state.status, a.state.needsDecision], ["live", true], "level knockout: the scorer decides");
+  ok(await send("extra_time"), "extra_time");
+  ok(await send("end_period", { period: 3 }), "end ET 1");
+  ok(await send("period_start", { period: 4 }), "kick-off ET 2");
+  ok(await send("end_period", { period: 4 }), "end ET 2");
+  ok(await send("shootout_start", { kicks: 3, first: "B" }), "shootout_start");
+  a = await send("kick", { team: "A", outcome: "scored" });
+  assert.deepStrictEqual([a.ok, a.error], [false, "it is Team B's kick"]);
+  for (const [team, outcome] of [["B", "scored"], ["A", "saved"], ["B", "scored"], ["A", "missed"]]) a = await send("kick", { team, outcome });
+  ok(a, "kick");
+  assert.deepStrictEqual([a.state.status, a.state.winner, a.state.ended], ["finished", "B", "shootout"]);
+  assert.strictEqual(a.state.resultText, "Team B won 2-0 on penalties (1-1)");
+});
+
 test("10. SIGTERM (what Docker sends on stop/restart): the server closes cleanly and exits 0 within 3 s", async () => {
   if (process.platform === "win32") {
     console.log("     (skipped on Windows: it has no SIGTERM; GitHub and the Linux container run this case)");
