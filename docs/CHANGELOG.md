@@ -9,6 +9,19 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-28 - Deployed kabaddi on the server (by hand): migration 008
+- **What:** deploy of `9f4593c` by the user on the server: `./scripts/backup.sh` (saved and copied to S3), `git pull` (`7196b5c..9f4593c`), `docker compose build`, `docker compose run --rm app node migrate.js`, then `docker compose up -d`.
+- **Checked:** `migrate.js` printed "applied 008_kabaddi.sql", "Database is up to date". The user sees Kabaddi in the admin sport list in production.
+- **Lesson:** right after migrate.js the admin page still had no Kabaddi: `docker compose up -d` had not been run yet, so the OLD app image was still running (build only makes the image; up -d replaces the running app). Then a hard reload (Ctrl+Shift+R).
+- **NOT checked:** a full kabaddi match on the server with a real scorer phone.
+- **Undo:** `git checkout 7196b5c` (or revert the kabaddi commits), `docker compose build`, `docker compose up -d`. Migration 008 can stay (it only allows 3 more event types).
+
+## 2026-11-28 - Kabaddi (842529b, 6d69032, 9f4593c) pushed; all 4 CI jobs green
+- **What:** `git push` of `d176a63`, `842529b`, `6d69032`, `9f4593c` (`7196b5c..9f4593c`). NOT deployed yet.
+- **Checked:** GitHub Actions run 46123061772 for `9f4593c`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API). The `reconnect` e2e test that failed once on the laptop passed on GitHub.
+- **Next (by hand, when the user decides):** deploy WITH a migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (must print "applied 008_kabaddi.sql"), `docker compose up -d`; scorers reload the scorer page. Then one full kabaddi match on a real phone.
+- **Undo:** see the three kabaddi entries below.
+
 ## 2026-11-28 - Kabaddi 3/3: match page that feels live
 - **What:** `public/match.html`, `public/js/match.js`, `public/js/match-logic.js`, `public/css/match.css`: kabaddi board: score, the half now with its points, finished halves ("H1 3-1"), a banner (HALF TIME, "TIMEOUT: ECE", "BREAK: Rain delay", tie-break), players on court (number + dots drawn by CSS: the ● and ○ symbols have different sizes in phone fonts), a red danger line at 3 or fewer on court ("ECE: 3 on court - SUPER TACKLE on!", 1 left: "ALL OUT danger"), a "Points by type" table (Raid, Tackle, All out, Technical; Corrections only when used), "Big moments" with points (newest 6: "ALL OUT · CSE +2 · H1 · 10-0", "SUPER RAID · CSE +3 (2 out + bonus) ..."), and a big pop-up for 6 s when a NEW moment happens ("SUPER RAID + ALL OUT! CSE +7"; `MatchLogic.kabaddiPop`: none when the page opens, when the same state comes again, after UNDO, or for a normal raid; instant with "reduce motion"). Screen-reader sentence ("CSE 4, ECE 0. Half 1."). New `e2e/scorer-kabaddi.spec.js` (scorer page + match page together). `PROJECT_CONTEXT.md`: kabaddi section.
 - **Why:** the user wants students to feel they watch at the ground; chose: pop-up, danger line, points by type, points in moments (not: who leads, timeouts used, last raid line).
