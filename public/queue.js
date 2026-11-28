@@ -84,7 +84,10 @@
       // The scorer page uses it to see if a toss is still on its way to the server.
       pending: function (user) {
         return items.filter(function (it) { return mine(it, user); })
-          .map(function (it) { return { matchId: it.matchId, type: it.type }; });
+          // data too (football follows its waiting kicks); a copy, so the page cannot change the queue
+          .map(function (it) {
+            return { matchId: it.matchId, type: it.type, data: it.data === undefined || it.data === null ? null : JSON.parse(JSON.stringify(it.data)) };
+          });
       },
 
       // what goes over the network: only the fields the server knows

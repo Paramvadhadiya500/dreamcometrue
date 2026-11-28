@@ -663,5 +663,257 @@ const blockedTest = (async () => {
   ok("kabaddi: raid form, limits, summary, END HALF, tie-break, breaks, fixes, offline");
 }
 
+// ---- 12. football: KICK-OFF, goal / penalty / card forms, END HALF, remove, extra time, shootout (double tap), offline ----
+{
+  const football = require("./engines/football");
+  const { effectivePoints } = require("./engine");
+  let version = 0;
+  const GROUP = { halfMinutes: 15, players: 6, knockout: false };
+  const KNOCK = { halfMinutes: 7, players: 5, knockout: true };
+  const fbState = (events, config = GROUP) => ({ matchId: "m1", name: "Match 1", sport: "football", teamA: "CSE", teamB: "ECE",
+    ...football.compute(effectivePoints(events.map((e, i) => ({ seq: i + 1, ...e }))), { config }), version: ++version });
+  const KO = (n) => ({ type: "period_start", data: { period: n } });
+  const END = (n) => ({ type: "end_period", data: { period: n } });
+  const G = (team, shirt = 9, kind = "normal") => ({ type: "goal", data: { team, kind, shirt } });
+  const shown = (w, id) => w.el(id).style.display === "block";
+  const visible = (w, id) => w.el(id).style.display === "inline-block";
+  const last = (w) => JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.data]);
+  const text = (w, id) => w.el(id).textContent;
+  const type = (w, shirt, name = "") => { w.el("fbShirt").value = shirt; w.el("fbPlayerName").value = name; w.ctx.updateFootballUI(); };
+
+  const w = makeWorld({ preset: { "scorer-session": session } });
+  w.connect();
+  w.ctx.showState(fbState([]));
+  assert.ok(shown(w, "fbView") && shown(w, "fbControls") && shown(w, "fbPlay") && !shown(w, "fbDecide") && !shown(w, "fbShoot"), "football view");
+  assert.ok(!shown(w, "kbControls") && !shown(w, "simpleControls") && !shown(w, "simpleView"), "no other sport's buttons");
+  assert.deepStrictEqual([text(w, "fbNameA"), text(w, "fbNameB"), text(w, "fbFinB"), text(w, "fbPeriod")],
+    ["CSE", "ECE", "Finish: ECE wins", "1st half (6-a-side, 2 x 15 min): not kicked off yet"]);
+  // before the kick-off: only KICK-OFF and CARD
+  assert.ok(visible(w, "fbKickoff") && !visible(w, "fbEnd") && !visible(w, "fbGoalA") && !visible(w, "fbPenB"));
+  assert.strictEqual(text(w, "fbKickoff"), "KICK-OFF 1st half");
+  w.ctx.fbKickoff();
+  assert.strictEqual(last(w), JSON.stringify(["period_start", { period: 1 }]));
+  assert.ok(!visible(w, "fbKickoff") && visible(w, "fbEnd") && visible(w, "fbGoalA"), "the kick-off waiting: the phone already plays the half");
+  w.ctx.fbKickoff();
+  assert.strictEqual(w.sent.length, 1, "a double KICK-OFF tap sends once");
+  w.ack({ ok: true });
+  w.ctx.showState(fbState([KO(1)]));
+
+  // a goal: GOAL under ECE, shirt number + name, SAVE
+  w.ctx.fbOpen("goal", "B");
+  assert.ok(shown(w, "fbForm") && !shown(w, "fbTeams") && shown(w, "fbKinds") && !shown(w, "fbColors"), "the goal form");
+  assert.deepStrictEqual([text(w, "fbFormTitle"), w.el("fbKind_normal").className, text(w, "fbSummary"), w.el("fbSave").disabled],
+    ["GOAL for ECE", "on", "Type the shirt number of the scorer", true]);
+  type(w, "100");
+  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 99");
+  type(w, "0");
+  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 99");
+  type(w, "7", "<b>");
+  assert.strictEqual(text(w, "fbSummary"), "Name: up to 20 letters, numbers, spaces and . ' -");
+  type(w, "", "Rahul");
+  assert.strictEqual(text(w, "fbSummary"), "Type the shirt number (the name is extra)");
+  w.ctx.fbPick("kind", "free_kick");
+  type(w, " 7 ", "  Ravi   K ");
+  assert.deepStrictEqual([text(w, "fbSummary"), w.el("fbSave").disabled, text(w, "fbSave")], ["Will send: GOAL ECE #7 Ravi K (free kick)", false, "SAVE GOAL"]);
+  w.ctx.fbSave();
+  assert.strictEqual(last(w), JSON.stringify(["goal", { team: "B", kind: "free_kick", shirt: 7, name: "Ravi K" }]));
+  assert.deepStrictEqual([shown(w, "fbForm"), text(w, "fbSent")], [false, "Sent: GOAL ECE #7 Ravi K (free kick)"]);
+  w.ctx.fbSave();
+  assert.strictEqual(w.sent.length, 1, "a double tap on SAVE sends the goal once (the form is closed)");
+  w.ack({ ok: true });
+  // own goal: the shirt is of the OTHER team's player
+  w.ctx.fbOpen("goal", "A");
+  w.ctx.fbPick("kind", "own_goal");
+  assert.strictEqual(text(w, "fbShirtQ"), "Shirt number of the ECE player who put it in");
+  assert.strictEqual(text(w, "fbSummary"), "Type the shirt number of the ECE player");
+  type(w, "4");
+  w.ctx.fbSave();
+  assert.strictEqual(last(w), JSON.stringify(["goal", { team: "A", kind: "own_goal", shirt: 4 }]));
+  w.ack({ ok: true });
+  // a goal form cancelled sends nothing
+  w.ctx.fbOpen("goal", "A");
+  w.ctx.fbCancel();
+  assert.deepStrictEqual([w.sent.length, shown(w, "fbForm"), shown(w, "fbTeams")], [0, false, true]);
+
+  // a penalty: PENALTY sends "penalty_start" at once (students see "PENALTY TO CSE!"), then the result
+  w.ctx.fbOpen("penalty", "A");
+  assert.strictEqual(last(w), JSON.stringify(["penalty_start", { team: "A" }]));
+  w.ack({ ok: true });
+  assert.ok(shown(w, "fbOutcomes") && !shown(w, "fbKinds"));
+  assert.strictEqual(text(w, "fbSummary"), "Tap SCORED, SAVED or MISSED");
+  w.ctx.fbPick("outcome", "scored");
+  assert.strictEqual(text(w, "fbSummary"), "Type the shirt number of the scorer");
+  w.ctx.fbPick("outcome", "saved");
+  assert.strictEqual(text(w, "fbSummary"), "Will send: Penalty CSE: saved", "a saved penalty needs no shirt");
+  w.ctx.fbSave();
+  assert.strictEqual(last(w), JSON.stringify(["penalty", { team: "A", outcome: "saved" }]));
+  w.ack({ ok: true });
+  // Cancel penalty: sends cancel, the banner goes away
+  w.ctx.fbOpen("penalty", "B");
+  w.ack({ ok: true });
+  assert.strictEqual(text(w, "fbFormCancel"), "Cancel penalty (no kick)");
+  w.ctx.fbCancel();
+  assert.strictEqual(last(w), JSON.stringify(["penalty_start", { cancel: true }]));
+  w.ack({ ok: true });
+  // a penalty started on another phone (or before a reload): its form opens, nothing is sent
+  w.ctx.showState(fbState([KO(1), { type: "penalty_start", data: { team: "B" } }]));
+  assert.deepStrictEqual([shown(w, "fbForm"), text(w, "fbFormTitle"), w.sent.length, text(w, "fbPenNow")],
+    [true, "PENALTY to ECE (students see it now). What happened?", 0, "PENALTY TO ECE (students see it)"]);
+  w.ctx.fbPick("outcome", "scored");
+  type(w, "10");
+  w.ctx.fbSave();
+  assert.strictEqual(last(w), JSON.stringify(["penalty", { team: "B", outcome: "scored", shirt: 10 }]));
+  w.ack({ ok: true });
+
+  // a card: colour must be chosen (no default)
+  w.ctx.showState(fbState([KO(1)]));
+  w.ctx.fbOpen("card", "A");
+  type(w, "5");
+  assert.strictEqual(text(w, "fbSummary"), "Tap YELLOW or RED");
+  w.ctx.fbPick("color", "red");
+  assert.strictEqual(text(w, "fbSummary"), "Will send: Red card CSE #5");
+  w.ctx.fbSave();
+  assert.strictEqual(last(w), JSON.stringify(["card", { team: "A", color: "red", shirt: 5 }]));
+  w.ack({ ok: true });
+
+  // the score screen: goals, halves
+  const h1 = [KO(1), G("A", 9), G("B", 7, "free_kick")];                // goal seqs 2 and 3
+  w.ctx.showState(fbState(h1));
+  assert.deepStrictEqual([text(w, "fbA"), text(w, "fbB"), text(w, "fbHalves"), text(w, "fbGoals")],
+    ["1", "1", "H1 1-1 (now)", "Last goals: ECE #7 (free kick) · CSE #9"]);
+
+  // remove a wrong goal: the list comes from the server's "removable"
+  w.ctx.toggleFbFix();
+  assert.ok(shown(w, "fbFix"));
+  assert.deepStrictEqual(w.el("fbFixList").children.map((b) => b.textContent),
+    ["Remove: GOAL ECE #7 (free kick) (1st half, 1-1)", "Remove: GOAL CSE #9 (1st half, 1-0)"], "newest first");
+  w.el("fbFixList").children[0].onclick();
+  assert.ok(w.confirms.at(-1).startsWith("REMOVE: GOAL ECE #7 (free kick) (1st half, 1-1)?"));
+  assert.strictEqual(last(w), JSON.stringify(["remove", { seq: 3 }]));
+  assert.ok(!shown(w, "fbFix"));
+  w.ack({ ok: true });
+
+  // END HALF: asks, says what happens, sends the half number; a double tap cannot end the 2nd half
+  w.ctx.showState(fbState(h1));
+  assert.strictEqual(text(w, "fbEnd"), "END 1ST HALF");
+  w.ctx.fbEndHalf();
+  assert.ok(w.confirms.at(-1).startsWith("End the 1st half? Half time starts."));
+  assert.strictEqual(last(w), JSON.stringify(["end_period", { period: 1 }]));
+  assert.deepStrictEqual([visible(w, "fbEnd"), text(w, "fbKickoff")], [false, "KICK-OFF 2nd half"], "the phone is at half time");
+  const n = w.sent.length;
+  w.ctx.fbEndHalf();
+  assert.strictEqual(w.sent.length, n, "a second END tap while waiting sends nothing");
+  w.ack({ ok: true });
+  w.ctx.showState(fbState([...h1, END(1)]));
+  assert.deepStrictEqual([text(w, "fbBreakNow"), shown(w, "fbBreakNow")], ["HALF TIME", true]);
+  assert.ok(!visible(w, "fbGoalA") && visible(w, "fbKickoff"), "no goals at half time");
+  w.setConfirm(true);
+  const h2 = [...h1, END(1), KO(2)];
+  w.ctx.showState(fbState(h2));
+  w.ctx.fbEndHalf();
+  assert.ok(w.confirms.at(-1).includes("The score is level: the match ends as a DRAW."), w.confirms.at(-1));
+  w.ack({ ok: true });
+
+  // a knockout match level at full time: EXTRA TIME or SHOOTOUT
+  const level = [...h2, END(2)];
+  w.ctx.showState(fbState(h2, KNOCK));
+  w.ctx.fbEndHalf();
+  assert.ok(w.confirms.at(-1).includes("next you choose EXTRA TIME or the PENALTY SHOOTOUT"));
+  w.ack({ ok: true });
+  w.ctx.showState(fbState(level, KNOCK));
+  assert.ok(shown(w, "fbDecide") && !shown(w, "fbPlay") && !shown(w, "fbShoot"));
+  assert.deepStrictEqual([w.el("fbEtBtn").style.display, w.el("fbShootBtn").disabled, text(w, "fbBreakNow")], ["inline-block", true, "FULL TIME: LEVEL"]);
+  w.ctx.fbExtraTime();
+  assert.strictEqual(last(w), JSON.stringify(["extra_time", null]));
+  assert.ok(shown(w, "fbPlay") && visible(w, "fbGoalA"), "extra time kicks off at once");
+  assert.strictEqual(text(w, "fbEnd"), "END EXTRA TIME 1ST HALF");
+  w.ack({ ok: true });
+  // after extra time, still level: only the shootout
+  const levelET = [...level, { type: "extra_time" }, END(3), KO(4), END(4)];
+  w.ctx.showState(fbState(levelET, KNOCK));
+  assert.strictEqual(w.el("fbEtBtn").style.display, "none", "no second extra time");
+  w.ctx.fbPickShoot("kicks", 3);
+  assert.strictEqual(w.el("fbShootBtn").disabled, true, "who kicks first is still missing");
+  w.ctx.fbPickShoot("first", "B");
+  assert.deepStrictEqual([w.el("fbKicks3").className, w.el("fbFirstB").className, w.el("fbShootBtn").disabled], ["on", "teamB on", false]);
+  w.ctx.fbStartShootout();
+  assert.ok(w.confirms.at(-1).startsWith("Start the PENALTY SHOOTOUT: 3 kicks each, ECE kicks first?"));
+  assert.strictEqual(last(w), JSON.stringify(["shootout_start", { kicks: 3, first: "B" }]));
+  assert.ok(shown(w, "fbShoot"), "the phone already shows the shootout");
+  assert.strictEqual(text(w, "fbNext"), "Next kick: ECE (kick 1)");
+  w.ack({ ok: true });
+
+  // the shootout: a kick, then a double tap within 1.5 s does NOT become the other team's kick
+  const so = [...levelET, { type: "shootout_start", data: { kicks: 3, first: "B" } }];
+  w.ctx.showState(fbState(so, KNOCK));
+  assert.deepStrictEqual([text(w, "fbShootLine"), text(w, "fbNext"), w.el("fbNext").className],
+    ["Penalties: CSE 0 - 0 ECE · 3 kicks each", "Next kick: ECE (kick 1)", "bbTeam teamB"]);
+  w.ctx.fbKick("scored");
+  assert.strictEqual(last(w), JSON.stringify(["kick", { team: "B", outcome: "scored" }]));
+  assert.deepStrictEqual([text(w, "fbNext"), w.el("fbKick_saved").disabled, w.el("fbNext").className], ["Next kick: CSE (kick 1)", true, "bbTeam teamA"]);
+  w.ctx.fbKick("scored");
+  assert.strictEqual(text(w, "pending"), "1 entry waiting to be sent", "a double tap is ignored (it would have been CSE's kick)");
+  w.advance(1600);
+  w.render();
+  assert.strictEqual(w.el("fbKick_saved").disabled, false, "the buttons open again after 1.5 s");
+  w.ctx.fbKick("saved");
+  assert.strictEqual(text(w, "pending"), "2 entries waiting to be sent");
+  assert.deepStrictEqual([text(w, "fbShootA"), text(w, "fbShootB")], ["CSE: X - -", "ECE: O - -"]);
+  w.ack({ ok: true });
+  w.ctx.showState(fbState([...so, { type: "kick", data: { team: "B", outcome: "scored" } }], KNOCK));   // the server's new state
+  assert.strictEqual(last(w), JSON.stringify(["kick", { team: "A", outcome: "saved" }]), "the second kick is CSE's");
+  w.advance(1600);
+  w.ctx.fbKick("scored");                                        // ECE 2/2, CSE 0/1: CSE can still reach 2
+  w.advance(1600);
+  w.ctx.fbKick("missed");                                        // CSE 0/2 with 1 left, ECE 2: decided
+  assert.ok(shown(w, "fbWait") && !shown(w, "fbShoot"), "decided on the phone: wait for the server's result");
+  assert.ok(text(w, "fbWait").startsWith("Waiting for the server (3 entries to send)"), text(w, "fbWait"));
+  while (w.sent.length) w.ack({ ok: true });
+  w.ctx.showState(fbState(so, KNOCK));
+  assert.strictEqual(w.el("fbFixBtn").style.display, "none", "no 'remove' in the shootout");
+
+  // the texts of waiting / rejected entries
+  const et = (x) => w.ctx.entryText({ matchId: "m1", ...x });
+  assert.strictEqual(et(KO(2)), "Match 1: Kick-off 2nd half");
+  assert.strictEqual(et(END(3)), "Match 1: End Extra time 1st half", "a football match: halves, not quarters");
+  assert.strictEqual(et({ type: "goal", data: { team: "A", kind: "own_goal", shirt: 4, name: "Ravi" } }), "Match 1: GOAL team A #4 Ravi (own goal)");
+  assert.strictEqual(et({ type: "penalty", data: { team: "B", outcome: "missed" } }), "Match 1: Penalty team B: missed");
+  assert.strictEqual(et({ type: "card", data: { team: "B", color: "yellow", shirt: 3 } }), "Match 1: Yellow card team B #3");
+  assert.strictEqual(et({ type: "kick", data: { team: "A", outcome: "saved" } }), "Match 1: Shootout kick team A: saved");
+  assert.strictEqual(et({ type: "shootout_start", data: { kicks: 5, first: "A" } }), "Match 1: Penalty shootout: 5 kicks, team A first");
+  assert.strictEqual(et({ type: "remove", data: { seq: 3 } }), "Match 1: Remove a wrong entry");
+  assert.strictEqual(et({ type: "penalty_start", data: { cancel: true } }), "Match 1: Penalty cancelled");
+
+  // offline: the phone follows its own waiting entries; after END 2nd half it waits for the server
+  const w2 = makeWorld({ preset: { "scorer-session": session } });
+  w2.connect();
+  w2.ctx.showState(fbState([]));
+  w2.disconnect();
+  w2.ctx.fbKickoff();
+  w2.ctx.fbOpen("goal", "A"); type(w2, "9"); w2.ctx.fbSave();
+  w2.ctx.fbEndHalf();
+  assert.strictEqual(text(w2, "fbKickoff"), "KICK-OFF 2nd half");
+  w2.ctx.fbKickoff();
+  assert.strictEqual(text(w2, "fbEnd"), "END 2ND HALF");
+  w2.ctx.fbEndHalf();
+  assert.ok(w2.confirms.at(-1).includes("entries are still waiting to be sent"), "the question warns that the score may be old");
+  assert.ok(shown(w2, "fbWait") && !shown(w2, "fbPlay"), "after END 2nd half only the server knows: draw, win or a decision");
+  w2.ctx.act("undo");                                             // takes the waiting END 2nd half back
+  assert.ok(!shown(w2, "fbWait") && shown(w2, "fbPlay") && visible(w2, "fbEnd"));
+  w2.connect();
+  const types = [];
+  while (w2.sent.length) { const p = w2.ack({ ok: true }); types.push(p.type + (p.data && p.data.period ? p.data.period : "")); }
+  assert.deepStrictEqual(types, ["period_start1", "goal", "end_period1", "period_start2", "end_period2", "undo"], "sent in order, with the half numbers");
+
+  // another match chosen: the football screen and a half-filled form go away
+  w.ctx.showState(fbState([KO(1)]));
+  w.ctx.fbOpen("goal", "A");
+  w.el("match").onchange();
+  assert.ok(!shown(w, "fbView") && !shown(w, "fbControls"));
+  w.ctx.showState(fbState([KO(1)]));
+  assert.ok(!shown(w, "fbForm") && shown(w, "fbTeams"), "a fresh screen");
+  ok("football: kick-off, goal / penalty / card forms, END HALF, remove, extra time, shootout double tap, offline");
+}
+
 await blockedTest;
 };

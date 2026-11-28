@@ -61,6 +61,23 @@
   #kbFix .kbTwo button { background: #fdd; font-size: 16px; min-height: 48px; }
   #kbBreakNow { background: #fd8; padding: 6px 10px; font-weight: bold; text-align: center; margin: 4px 0; }
   #kbCourt { font-size: 17px; font-weight: bold; }
+  /* football: KICK-OFF, GOAL / PENALTY / CARD per team, a small form (shirt number + name), END HALF, shootout */
+  .fbThree button { width: 30%; font-size: 18px; font-weight: bold; padding: 14px 2px; margin: 4px 1%; min-height: 56px; vertical-align: top; overflow-wrap: anywhere; }
+  #fbControls button.on { background: #fc6; border: 3px solid #c80; }
+  #fbControls .fbWide { width: 92%; }
+  #fbControls .fbGo { background: #cfc; }
+  #fbControls .small { font-size: 16px; min-height: 48px; }
+  #fbControls #fbEnd { background: #fe9; }
+  #fbControls input { width: 92%; margin: 4px 2%; box-sizing: border-box; }
+  #fbControls #fbColor_yellow { background: #fe6; }
+  #fbControls #fbColor_red { background: #f88; }
+  #fbControls #fbColor_yellow.on, #fbControls #fbColor_red.on { border: 4px solid #000; }
+  #fbForm { border: 2px solid #888; border-radius: 6px; margin: 6px 2%; padding-bottom: 8px; }
+  #fbSummary { font-size: 19px; font-weight: bold; min-height: 26px; padding: 8px 12px 0; }
+  #fbBreakNow, #fbWait, #fbPenNow { background: #fd8; padding: 6px 10px; font-weight: bold; text-align: center; margin: 4px 0; }
+  #fbNext { font-size: 22px; }
+  #fbFix { border: 2px solid #c33; border-radius: 6px; margin: 6px 2%; padding: 6px; }
+  #fbFixList button { font-size: 16px; padding: 10px; margin: 4px 0; width: 100%; background: #fdd; text-align: left; overflow-wrap: anywhere; }
 </style>
 
 <div id="loginBox" style="display:none; padding:16px">
@@ -105,6 +122,15 @@
       <div id="kbDod" class="hint"></div>
       <div id="kbBreakNow" style="display:none"></div>
       <div id="kbLast" class="hint"></div>
+    </div>
+    <div id="fbView" style="display:none">
+      <div class="vs" id="fbNames"></div>
+      <h1><span id="fbA">0</span> : <span id="fbB">0</span></h1>
+      <div id="fbPeriod" class="vs"></div>
+      <div id="fbBreakNow" style="display:none"></div>
+      <div id="fbPenNow" style="display:none"></div>
+      <div id="fbHalves" class="hint"></div>
+      <div id="fbGoals" class="hint"></div>
     </div>
     <div id="crView" style="display:none">
       <h1 id="crBig" style="margin:6px 0"></h1>
@@ -214,6 +240,59 @@
       <div class="kbQ">End the match early (walkover)</div>
       <div class="kbTwo"><button id="kbFinA" onclick="finishWithWinner('A')">Finish: Team A wins</button><button id="kbFinB" onclick="finishWithWinner('B')">Finish: Team B wins</button></div>
     </div>
+  </div>
+
+  <!-- football: KICK-OFF, then GOAL / PENALTY / CARD under each team (shirt number + optional name), END HALF.
+       Level knockout: EXTRA TIME or PENALTY SHOOTOUT; then the shootout kick by kick. -->
+  <div id="fbControls" style="display:none">
+    <div id="fbWait" style="display:none"></div>
+    <div id="fbDecide" style="display:none">
+      <div class="kbQ">Level at full time. What did the referee decide?</div>
+      <button id="fbEtBtn" class="fbWide" onclick="fbExtraTime()">EXTRA TIME</button>
+      <div class="kbQ">or PENALTY SHOOTOUT: kicks for each team (then sudden death)</div>
+      <div class="kbTwo"><button id="fbKicks3" onclick="fbPickShoot('kicks',3)">3 kicks</button><button id="fbKicks5" onclick="fbPickShoot('kicks',5)">5 kicks</button></div>
+      <div class="kbQ">Who kicks first?</div>
+      <div class="kbTwo"><button class="teamA" id="fbFirstA" onclick="fbPickShoot('first','A')">Team A</button><button class="teamB" id="fbFirstB" onclick="fbPickShoot('first','B')">Team B</button></div>
+      <button id="fbShootBtn" class="fbWide fbGo" onclick="fbStartShootout()" disabled>START PENALTY SHOOTOUT</button>
+    </div>
+    <div id="fbShoot" style="display:none">
+      <div class="kbQ" id="fbShootLine"></div>
+      <div class="hint" id="fbShootA"></div>
+      <div class="hint" id="fbShootB"></div>
+      <div class="bbTeam" id="fbNext"></div>
+      <div class="fbThree"><button id="fbKick_scored" onclick="fbKick('scored')">SCORED</button><button id="fbKick_saved" onclick="fbKick('saved')">SAVED</button><button id="fbKick_missed" onclick="fbKick('missed')">MISSED</button></div>
+      <div id="fbKickSent" class="hint"></div>
+    </div>
+    <div id="fbPlay">
+      <button id="fbKickoff" class="fbWide fbGo" onclick="fbKickoff()">KICK-OFF 1st half</button>
+      <div id="fbTeams">
+        <div class="bbTeam teamA" id="fbNameA">Team A</div>
+        <div class="fbThree"><button id="fbGoalA" onclick="fbOpen('goal','A')">GOAL</button><button id="fbPenA" onclick="fbOpen('penalty','A')">PENALTY</button><button id="fbCardA" onclick="fbOpen('card','A')">CARD</button></div>
+        <div class="bbTeam teamB" id="fbNameB">Team B</div>
+        <div class="fbThree"><button id="fbGoalB" onclick="fbOpen('goal','B')">GOAL</button><button id="fbPenB" onclick="fbOpen('penalty','B')">PENALTY</button><button id="fbCardB" onclick="fbOpen('card','B')">CARD</button></div>
+      </div>
+      <div id="fbForm" style="display:none">
+        <div class="kbQ" id="fbFormTitle"></div>
+        <div id="fbKinds" class="fbThree"><button id="fbKind_normal" onclick="fbPick('kind','normal')">Normal</button><button id="fbKind_free_kick" onclick="fbPick('kind','free_kick')">Free kick</button><button id="fbKind_own_goal" onclick="fbPick('kind','own_goal')">Own goal</button></div>
+        <div id="fbOutcomes" class="fbThree"><button id="fbOut_scored" onclick="fbPick('outcome','scored')">SCORED</button><button id="fbOut_saved" onclick="fbPick('outcome','saved')">SAVED</button><button id="fbOut_missed" onclick="fbPick('outcome','missed')">MISSED</button></div>
+        <div id="fbColors" class="kbTwo"><button id="fbColor_yellow" onclick="fbPick('color','yellow')">YELLOW</button><button id="fbColor_red" onclick="fbPick('color','red')">RED</button></div>
+        <div class="kbQ" id="fbShirtQ">Shirt number</div>
+        <input id="fbShirt" inputmode="numeric" maxlength="2" placeholder="Shirt number, e.g. 9" oninput="updateFootballUI()">
+        <input id="fbPlayerName" maxlength="20" placeholder="Name (optional)" oninput="updateFootballUI()">
+        <div id="fbSummary"></div>
+        <button id="fbSave" class="fbWide fbGo" onclick="fbSave()" disabled>SAVE</button>
+        <button class="small fbWide" id="fbFormCancel" onclick="fbCancel()">Cancel</button>
+      </div>
+      <div id="fbSent" class="hint"></div>
+      <button id="fbEnd" class="fbWide" onclick="fbEndHalf()">END 1st HALF</button>
+    </div>
+    <div><button class="small fbWide" id="fbFixBtn" onclick="toggleFbFix()">Fix a mistake (remove a goal, penalty or card)</button></div>
+    <div id="fbFix" style="display:none">
+      <div class="hint" id="fbFixHint"></div>
+      <div id="fbFixList"></div>
+    </div>
+    <div class="kbQ">End the match early (walkover)</div>
+    <div class="kbTwo"><button id="fbFinA" onclick="finishWithWinner('A')">Finish: Team A wins</button><button id="fbFinB" onclick="finishWithWinner('B')">Finish: Team B wins</button></div>
   </div>
 
   <div id="simpleControls" class="grid" style="display:none">
@@ -375,19 +454,21 @@
 
   // the types of this match's entries still waiting on this phone (offline or slow server), oldest first.
   // An UNDO that is still waiting cancels the waiting entry before it (the same rule as the server's undo).
-  function waitingTypes(matchId) {
+  // waitingItems: the same, but the whole entries (football needs their data, e.g. the shootout kicks)
+  function waitingItems(matchId) {
     if (!session) return [];
     const stack = [];
     for (const x of q.pending(session.username)) {
       if (x.matchId !== matchId) continue;
-      if (x.type !== "undo") { stack.push(x.type); continue; }
+      if (x.type !== "undo") { stack.push(x); continue; }
       // UNDO takes back the newest entry that is not a raid start (the same rule as engine.js effectivePoints)
       for (let i = stack.length - 1; i >= 0; i--) {
-        if (stack[i] !== "raid_start") { stack.splice(i, 1); break; }
+        if (stack[i].type !== "raid_start") { stack.splice(i, 1); break; }
       }
     }
     return stack;
   }
+  function waitingTypes(matchId) { return waitingItems(matchId).map((x) => x.type); }
   // basketball and kabaddi: END QUARTER / END HALF entries of this match still waiting on this phone
   function waitingEnds(matchId) {
     return waitingTypes(matchId).filter((t) => t === "end_period").length;
@@ -640,6 +721,331 @@
       () => act("court", undefined, undefined, { team, change }));
   }
 
+  // ---------- football (rules in engines/football.js; the server checks every entry again) ----------
+  const FB_PERIODS = ["1st half", "2nd half", "Extra time 1st half", "Extra time 2nd half"];
+  const FB_KIND_WORDS = { normal: "", free_kick: " (free kick)", own_goal: " (own goal)", penalty: " (penalty)" };
+  const FB_NAME_OK = /^[\p{L}\p{M}\p{N} .'-]+$/u;        // the same rule as the server
+  const FB_KICK_LOCK_MS = 1500;           // after a shootout kick: a double tap must not become the OTHER team's kick
+  let fbForm = null;                      // the open form: { what: goal|penalty|card, team, kind, outcome, color }
+  let fbShootPick = { kicks: null, first: null };
+  let fbKickBusyUntil = 0;
+  let fbPenaltyDoneAt = -1;               // state version when this phone saved / cancelled a penalty (no re-open from that old state)
+
+  // "#9 Rahul", "#9", "" (no player)
+  const fbWho = (d) => (d && d.shirt ? "#" + d.shirt + (d.name ? " " + d.name : "") : "");
+
+  // the same shootout rule as the server: who is next, and is it decided?
+  function fbShootoutWinner(so) {
+    const g = (l) => l.filter((o) => o === "scored").length;
+    const gA = g(so.A), gB = g(so.B), n = so.kicks;
+    if (so.A.length <= n && so.B.length <= n) {
+      if (gA > gB + n - so.B.length) return "A";
+      if (gB > gA + n - so.A.length) return "B";
+      if (so.A.length < n || so.B.length < n) return null;
+    }
+    if (so.A.length === so.B.length && gA !== gB) return gA > gB ? "A" : "B";
+    return null;
+  }
+  const fbNextKicker = (so) => ((so.A.length + so.B.length) % 2 === 0 ? so.first : otherTeam(so.first));
+
+  // where this phone is: the last state from the server + the entries still waiting on this phone.
+  // unknown = an entry is waiting whose result only the server knows (the end of the match, full time):
+  // then the buttons wait for the server.
+  function fbPhase(s) {
+    const ph = { period: s.period, playing: s.playing, decide: s.needsDecision, canET: s.canExtraTime, unknown: false,
+      so: s.shootout ? { kicks: s.shootout.kicks, first: s.shootout.first, A: s.shootout.A.slice(), B: s.shootout.B.slice() } : null,
+      waiting: 0, penalty: s.penaltyNow ? s.penaltyNow.team : null };
+    for (const x of waitingItems(s.matchId)) {
+      ph.waiting += 1;
+      const d = x.data || {};
+      if (x.type === "period_start") ph.playing = true;
+      else if (x.type === "end_period") {
+        ph.playing = false; ph.penalty = null;
+        if (ph.period === 2 || ph.period === 4) ph.unknown = true; else ph.period += 1;
+      } else if (x.type === "extra_time") { ph.decide = false; ph.canET = false; ph.period = 3; ph.playing = true; }
+      else if (x.type === "shootout_start") { ph.decide = false; ph.so = { kicks: d.kicks, first: d.first, A: [], B: [] }; }
+      else if (x.type === "kick" && ph.so && (d.team === "A" || d.team === "B")) ph.so[d.team].push(d.outcome);
+      else if (x.type === "penalty_start") ph.penalty = d.cancel ? null : d.team;
+      else if (x.type === "penalty") ph.penalty = null;
+      else if (x.type === "finish") ph.unknown = true;
+    }
+    if (ph.so) {
+      ph.so.next = fbNextKicker(ph.so);
+      if (fbShootoutWinner(ph.so)) ph.unknown = true;                 // the last kick decided it: the server says the result
+    }
+    return ph;
+  }
+
+  // the break banner on the scorer's screen ("" = none)
+  function fbBreakText(s) {
+    const b = s.breakNow;
+    if (!b) return "";
+    if (b.kind === "half_time") return "HALF TIME";
+    if (b.kind === "extra_time_half_time") return "EXTRA TIME: HALF TIME";
+    return "FULL TIME: LEVEL";
+  }
+
+  // shirt number typed on the phone: a number 1-99, null = empty, NaN = wrong
+  function fbShirtTyped() {
+    const raw = String($("fbShirt").value).trim();
+    if (!raw) return null;
+    if (!/^\d{1,2}$/.test(raw) || Number(raw) < 1) return NaN;
+    return Number(raw);
+  }
+  // the name typed: "" = none, null = not allowed
+  function fbNameTyped() {
+    const raw = String($("fbPlayerName").value);
+    if (/[\u0000-\u001f\u007f]/.test(raw)) return null;
+    const t = raw.replace(/ +/g, " ").trim();
+    if (!t) return "";
+    return t.length <= 20 && FB_NAME_OK.test(t) ? t : null;
+  }
+
+  // what SAVE will send, or an error text for the summary line
+  function fbFormData(s) {
+    const f = fbForm;
+    const shirt = fbShirtTyped();
+    const name = fbNameTyped();
+    if (Number.isNaN(shirt)) return { error: "Shirt number: 1 to 99" };
+    if (name === null) return { error: "Name: up to 20 letters, numbers, spaces and . ' -" };
+    const player = shirt ? (name ? { shirt, name } : { shirt }) : {};
+    if (name && !shirt) return { error: "Type the shirt number (the name is extra)" };
+    if (f.what === "goal") {
+      if (!shirt) return { error: f.kind === "own_goal" ? "Type the shirt number of the " + teamName(s, otherTeam(f.team)) + " player" : "Type the shirt number of the scorer" };
+      return { type: "goal", data: { team: f.team, kind: f.kind, ...player } };
+    }
+    if (f.what === "penalty") {
+      if (!f.outcome) return { error: "Tap SCORED, SAVED or MISSED" };
+      if (f.outcome === "scored" && !shirt) return { error: "Type the shirt number of the scorer" };
+      return { type: "penalty", data: { team: f.team, outcome: f.outcome, ...player } };
+    }
+    if (!f.color) return { error: "Tap YELLOW or RED" };
+    if (!shirt) return { error: "Type the shirt number of the player" };
+    return { type: "card", data: { team: f.team, color: f.color, ...player } };
+  }
+
+  // "GOAL CSE #9 Rahul (free kick)", "Penalty ECE: saved", "Red card CSE #4"
+  function fbWords(s, type, d) {
+    const n = teamName(s, d.team);
+    const who = fbWho(d);
+    if (type === "goal") return "GOAL " + n + (who ? " " + who : "") + (FB_KIND_WORDS[d.kind] || "");
+    if (type === "penalty") return "Penalty " + n + ": " + d.outcome + (who ? " " + who : "");
+    return (d.color === "red" ? "Red" : "Yellow") + " card " + n + (who ? " " + who : "");
+  }
+
+  function fbOpen(what, team) {
+    const s = lastState;
+    if (!s || fbForm) return;
+    fbForm = { what, team, kind: "normal", outcome: null, color: null };
+    $("fbShirt").value = "";
+    $("fbPlayerName").value = "";
+    $("fbSent").textContent = "";
+    // a penalty is shown to the students at once ("PENALTY TO CSE!"), before it is taken
+    if (what === "penalty") act("penalty_start", undefined, undefined, { team });
+    else updateFootballUI();
+  }
+
+  function fbPick(key, value) {
+    if (!fbForm) return;
+    fbForm[key] = value;
+    updateFootballUI();
+  }
+
+  function fbCancel() {
+    if (!fbForm) return;
+    const wasPenalty = fbForm.what === "penalty";
+    if (wasPenalty && lastState) fbPenaltyDoneAt = lastState.version;
+    fbForm = null;
+    if (wasPenalty) act("penalty_start", undefined, undefined, { cancel: true });   // the banner goes away
+    else updateFootballUI();
+  }
+
+  function fbSave() {
+    const s = lastState;
+    if (!s || !fbForm) return;
+    const r = fbFormData(s);
+    if (r.error) { $("fbSummary").textContent = r.error; return; }
+    if (fbForm.what === "penalty") fbPenaltyDoneAt = s.version;
+    fbForm = null;                                       // closed at once: a second tap on SAVE sends nothing
+    $("fbSent").textContent = "Sent: " + fbWords(s, r.type, r.data);
+    act(r.type, undefined, undefined, r.data);
+  }
+
+  function fbKickoff() {
+    const s = lastState;
+    if (!s || s.sport !== "football") return;
+    const ph = fbPhase(s);
+    if (ph.playing || ph.unknown || ph.decide || ph.so) return;
+    act("period_start", null, null, { period: ph.period });
+  }
+
+  // END HALF: says what will happen; the half number goes with it (a second press cannot end the next half)
+  function fbEndHalf() {
+    const s = lastState;
+    if (!s || s.sport !== "football") return;
+    const ph = fbPhase(s);
+    if (!ph.playing || ph.unknown) return;
+    const p = ph.period;
+    let text = "End the " + FB_PERIODS[p - 1] + "?";
+    if (p === 1) text += " Half time starts.";
+    else if (p === 3) text += " Extra time half time starts.";
+    else if (s.scoreA !== s.scoreB) {
+      const w = s.scoreA > s.scoreB ? "A" : "B";
+      text += " This ENDS THE MATCH: " + teamName(s, w) + " wins " + Math.max(s.scoreA, s.scoreB) + "-" + Math.min(s.scoreA, s.scoreB) +
+        (p === 4 ? " after extra time." : ".");
+    } else if (p === 4) text += " The score is level: next comes the PENALTY SHOOTOUT.";
+    else if (s.knockout) text += " The score is level: next you choose EXTRA TIME or the PENALTY SHOOTOUT.";
+    else text += " The score is level: the match ends as a DRAW.";
+    if (ph.waiting) text += " (" + ph.waiting + " entries are still waiting to be sent: the score on this phone may be old.)";
+    if (confirm(text + " You can still press UNDO afterwards.")) act("end_period", null, null, { period: p });
+  }
+
+  function fbExtraTime() {
+    if (confirm("Start EXTRA TIME? It kicks off now (extra time 1st half). You can still press UNDO afterwards.")) act("extra_time");
+  }
+
+  function fbPickShoot(key, value) {
+    fbShootPick[key] = value;
+    updateFootballUI();
+  }
+
+  function fbStartShootout() {
+    const s = lastState;
+    const p = fbShootPick;
+    if (!s || !p.kicks || !p.first) return;
+    if (!confirm("Start the PENALTY SHOOTOUT: " + p.kicks + " kicks each, " + teamName(s, p.first) + " kicks first? You can still press UNDO afterwards.")) return;
+    act("shootout_start", null, null, { kicks: p.kicks, first: p.first });
+    fbShootPick = { kicks: null, first: null };
+  }
+
+  function fbKick(outcome) {
+    const s = lastState;
+    if (!s || Date.now() < fbKickBusyUntil) return;
+    const ph = fbPhase(s);
+    if (!ph.so || ph.unknown) return;
+    const team = ph.so.next;
+    fbKickBusyUntil = Date.now() + FB_KICK_LOCK_MS;
+    $("fbKickSent").textContent = "Sent: " + teamName(s, team) + " kick " + outcome.toUpperCase();
+    act("kick", null, null, { team, outcome });
+  }
+
+  // "Fix a mistake": the goals, penalties and cards the server still allows to remove, newest first
+  function toggleFbFix() {
+    $("fbFix").style.display = $("fbFix").style.display === "block" ? "none" : "block";
+    updateFootballUI();
+  }
+  function fbRemovable(s) {
+    const can = new Set(s.removable || []);
+    const list = [];
+    for (const g of s.goals || []) if (can.has(g.seq)) list.push({ seq: g.seq, text: fbWords(s, "goal", g) + " (" + FB_PERIODS[g.period - 1] + ", " + g.scoreA + "-" + g.scoreB + ")" });
+    for (const x of s.penalties || []) if (can.has(x.seq)) list.push({ seq: x.seq, text: fbWords(s, "penalty", x) + " (" + FB_PERIODS[x.period - 1] + ")" });
+    for (const c of s.cards || []) if (can.has(c.seq)) list.push({ seq: c.seq, text: fbWords(s, "card", c) + " (" + FB_PERIODS[c.period - 1] + ")" });
+    return list.sort((a, b) => b.seq - a.seq);
+  }
+  function fbRemove(seq, text) {
+    if (!confirm("REMOVE: " + text + "? Use this only for a wrong entry. You can still press UNDO afterwards.")) return;
+    $("fbFix").style.display = "none";
+    act("remove", null, null, { seq });
+  }
+
+  // buttons from the last state this phone knows + entries still waiting
+  function updateFootballUI() {
+    const s = lastState;
+    if (!s || s.sport !== "football" || s.status === "finished") return;
+    const ph = fbPhase(s);
+    const show = (id, on) => { $(id).style.display = on ? "block" : "none"; };
+    show("fbWait", ph.unknown);
+    $("fbWait").textContent = ph.unknown ? "Waiting for the server (" + ph.waiting + (ph.waiting === 1 ? " entry" : " entries") + " to send). The buttons come back after that." : "";
+    show("fbDecide", !ph.unknown && ph.decide);
+    show("fbShoot", !ph.unknown && !ph.decide && !!ph.so);
+    show("fbPlay", !ph.unknown && !ph.decide && !ph.so);
+
+    // a penalty started on another phone (or before a reload): open its form, send nothing
+    if (!fbForm && ph.penalty && ph.playing && !ph.waiting && s.version > fbPenaltyDoneAt) fbForm = { what: "penalty", team: ph.penalty, kind: "normal", outcome: null, color: null };
+    // the half ended (another phone, UNDO): goals and penalties are no longer possible
+    if (fbForm && fbForm.what !== "card" && !ph.playing) fbForm = null;
+
+    // level at full time
+    $("fbEtBtn").style.display = ph.canET ? "inline-block" : "none";
+    $("fbKicks3").className = fbShootPick.kicks === 3 ? "on" : "";
+    $("fbKicks5").className = fbShootPick.kicks === 5 ? "on" : "";
+    $("fbFirstA").className = "teamA" + (fbShootPick.first === "A" ? " on" : "");
+    $("fbFirstB").className = "teamB" + (fbShootPick.first === "B" ? " on" : "");
+    $("fbShootBtn").disabled = !fbShootPick.kicks || !fbShootPick.first;
+
+    // the shootout
+    if (ph.so) {
+      const so = ph.so;
+      const g = (l) => l.filter((o) => o === "scored").length;
+      const marks = (l) => {
+        const done = l.map((o) => (o === "scored" ? "O" : "X"));
+        while (done.length < so.kicks) done.push("-");
+        return done.join(" ");
+      };
+      const sudden = Math.min(so.A.length, so.B.length) >= so.kicks;
+      $("fbShootLine").textContent = "Penalties: " + teamName(s, "A") + " " + g(so.A) + " - " + g(so.B) + " " + teamName(s, "B") +
+        (sudden ? " · SUDDEN DEATH" : " · " + so.kicks + " kicks each");
+      // one line per team (O scored, X saved / missed, - still to come)
+      $("fbShootA").textContent = teamName(s, "A") + ": " + marks(so.A);
+      $("fbShootB").textContent = teamName(s, "B") + ": " + marks(so.B);
+      // the kicking team in its colour, above short buttons (a long name inside them would break mid-word)
+      $("fbNext").textContent = "Next kick: " + teamName(s, so.next) + " (kick " + (so[so.next].length + 1) + ")";
+      $("fbNext").className = "bbTeam team" + so.next;
+      const locked = Date.now() < fbKickBusyUntil;
+      for (const o of ["scored", "saved", "missed"]) $("fbKick_" + o).disabled = locked;
+    }
+
+    // play
+    const f = fbForm;
+    const period = FB_PERIODS[ph.period - 1] || "";
+    $("fbKickoff").style.display = !ph.playing && !f ? "inline-block" : "none";
+    $("fbKickoff").textContent = "KICK-OFF " + period;
+    $("fbEnd").style.display = ph.playing && !f ? "inline-block" : "none";
+    $("fbEnd").textContent = "END " + period.toUpperCase();
+    show("fbTeams", !f);
+    for (const t of ["A", "B"]) {
+      $("fbGoal" + t).style.display = ph.playing ? "inline-block" : "none";
+      $("fbPen" + t).style.display = ph.playing ? "inline-block" : "none";
+    }
+    show("fbForm", !!f);
+    if (f) {
+      const n = teamName(s, f.team);
+      $("fbFormTitle").textContent = f.what === "goal" ? "GOAL for " + n
+        : f.what === "penalty" ? "PENALTY to " + n + " (students see it now). What happened?"
+        : "CARD for a " + n + " player";
+      show("fbKinds", f.what === "goal");
+      show("fbOutcomes", f.what === "penalty");
+      show("fbColors", f.what === "card");
+      for (const k of ["normal", "free_kick", "own_goal"]) $("fbKind_" + k).className = f.kind === k ? "on" : "";
+      for (const o of ["scored", "saved", "missed"]) $("fbOut_" + o).className = f.outcome === o ? "on" : "";
+      for (const c of ["yellow", "red"]) $("fbColor_" + c).className = f.color === c ? "on" : "";
+      $("fbShirtQ").textContent = f.what === "goal" && f.kind === "own_goal"
+        ? "Shirt number of the " + teamName(s, otherTeam(f.team)) + " player who put it in"
+        : f.what === "penalty" ? "Shirt number of the kicker (needed if SCORED)" : "Shirt number";
+      const r = fbFormData(s);
+      $("fbSummary").textContent = r.error || "Will send: " + fbWords(s, r.type, r.data);
+      $("fbSave").disabled = !!r.error;
+      $("fbSave").textContent = f.what === "goal" ? "SAVE GOAL" : f.what === "penalty" ? "SAVE PENALTY" : "SAVE CARD";
+      $("fbFormCancel").textContent = f.what === "penalty" ? "Cancel penalty (no kick)" : "Cancel";
+    }
+
+    // fix a mistake
+    $("fbFixBtn").style.display = ph.so ? "none" : "inline-block";
+    if ($("fbFix").style.display === "block") {
+      const list = fbRemovable(s);
+      $("fbFixHint").textContent = (ph.waiting ? ph.waiting + " entries are still waiting to be sent: this list may be old. " : "") +
+        (list.length ? "Tap the wrong entry. The LAST entry? Use UNDO instead." : "Nothing can be removed now (goals of normal time only in normal time; nothing at full time or in the shootout).");
+      const box = $("fbFixList");
+      box.textContent = "";
+      for (const x of list) {
+        const b = document.createElement("button");
+        b.textContent = "Remove: " + x.text;
+        b.onclick = () => fbRemove(x.seq, x.text);
+        box.appendChild(b);
+      }
+    }
+  }
+
   // sends the first waiting entry. force = called by the retry timer or a fresh connection;
   // a normal tap does not jump the waiting time after a failure.
   function flush(force) {
@@ -669,7 +1075,19 @@
     const m = ((session && session.matches) || []).find((mm) => mm.id === x.matchId);
     let t;
     try {
-      if (x.type === "ball" && x.data) t = describe(x.data);
+      const d = x.data || {};
+      const fb = sportOf[x.matchId] === "football";
+      if (fb && x.type === "end_period") t = "End " + (FB_PERIODS[d.period - 1] || "half");
+      else if (x.type === "period_start") t = "Kick-off " + (FB_PERIODS[d.period - 1] || "");
+      else if (x.type === "goal") t = "GOAL team " + d.team + (fbWho(d) ? " " + fbWho(d) : "") + (FB_KIND_WORDS[d.kind] || "");
+      else if (x.type === "penalty_start") t = d.cancel ? "Penalty cancelled" : "Penalty to team " + d.team;
+      else if (x.type === "penalty") t = "Penalty team " + d.team + ": " + d.outcome;
+      else if (x.type === "card") t = (d.color === "red" ? "Red" : "Yellow") + " card team " + d.team + (fbWho(d) ? " " + fbWho(d) : "");
+      else if (x.type === "extra_time") t = "Extra time";
+      else if (x.type === "shootout_start") t = "Penalty shootout: " + d.kicks + " kicks, team " + d.first + " first";
+      else if (x.type === "kick") t = "Shootout kick team " + d.team + ": " + d.outcome;
+      else if (x.type === "remove") t = "Remove a wrong entry";
+      else if (x.type === "ball" && x.data) t = describe(x.data);
       else if (x.type === "point" && x.value < 0) t = x.value + " for team " + x.team + " (correction)";
       else if (x.type === "point") t = "+" + (x.value || 1) + " for team " + x.team;
       else if (x.type === "end_period" && x.data && x.data.period >= 1) t = "End " + (sportOf[x.matchId] === "kabaddi" ? "Half " + x.data.period : periodNameOf(x.data.period));
@@ -921,6 +1339,7 @@
 
     updateBasketballUI();                                      // an END QUARTER just pressed (or just sent) moves the button on
     updateKabaddiUI();                                         // END HALF, and the raid limits while entries wait
+    updateFootballUI();                                        // KICK-OFF / END HALF / shootout turn while entries wait
   }
 
   function join() { if (socket && sel.value) socket.emit("join-match", sel.value); }
@@ -942,7 +1361,8 @@
     const isCR = s.sport === "cricket";
     const isBB = s.sport === "basketball";
     const isKB = s.sport === "kabaddi";
-    const isSimple = !isTT && !isCR && !isVB && !isBB && !isKB;
+    const isFB = s.sport === "football";
+    const isSimple = !isTT && !isCR && !isVB && !isBB && !isKB && !isFB;
     sportOf[s.matchId] = s.sport;
     $("ttView").style.display = isTT || isVB ? "block" : "none";
     $("simpleView").style.display = isSimple ? "block" : "none";
@@ -953,6 +1373,8 @@
     $("simpleControls").style.display = isSimple ? "block" : "none";
     $("bbControls").style.display = isBB && s.status !== "finished" ? "block" : "none";
     $("kbControls").style.display = isKB && s.status !== "finished" ? "block" : "none";
+    $("fbView").style.display = isFB ? "block" : "none";
+    $("fbControls").style.display = isFB && s.status !== "finished" ? "block" : "none";
     const needToss = isCR && s.status !== "finished" && !!s.needsToss && !tossWaiting(s.matchId);
     if (needToss && $("crToss").style.display !== "block") tossPick = { winner: null, choice: null };   // a fresh box
     $("crToss").style.display = needToss ? "block" : "none";
@@ -1033,6 +1455,30 @@
       $("kbTie").style.display = s.needsTiebreak ? "block" : "none";
       $("kbPlay").style.display = s.needsTiebreak ? "none" : "block";
       updateKabaddiUI();
+    } else if (isFB) {
+      $("fbNames").textContent = nameA + " vs " + nameB;
+      for (const [t, name] of [["A", nameA], ["B", nameB]]) {
+        $("fbName" + t).textContent = name;                    // full names above the buttons: nothing is cut off
+        $("fbFirst" + t).textContent = name;
+        $("fbFin" + t).textContent = "Finish: " + name + " wins";
+      }
+      $("fbA").textContent = s.scoreA;
+      $("fbB").textContent = s.scoreB;
+      $("fbPeriod").textContent = s.status === "finished" ? "" : s.shootout ? "Penalty shootout"
+        : (FB_PERIODS[s.period - 1] || "") + " (" + s.players + "-a-side, 2 x " + s.halfMinutes + " min)" + (s.kickedOff ? "" : ": not kicked off yet");
+      const brk = s.status === "finished" ? "" : fbBreakText(s);
+      $("fbBreakNow").textContent = brk;
+      $("fbBreakNow").style.display = brk ? "block" : "none";
+      const pen = s.penaltyNow ? "PENALTY TO " + teamName(s, s.penaltyNow.team).toUpperCase() + " (students see it)" : "";
+      $("fbPenNow").textContent = pen;
+      $("fbPenNow").style.display = pen ? "block" : "none";
+      const label = (i) => (i < 2 ? "H" + (i + 1) : "ET" + (i - 1));
+      const parts = (s.halves || []).map((h, i) => label(i) + " " + h[0] + "-" + h[1]);
+      if (s.playing) parts.push(label(s.period - 1) + " " + s.currentA + "-" + s.currentB + " (now)");
+      $("fbHalves").textContent = parts.join(" · ");
+      const goals = (s.goals || []).slice(-4).reverse().map((g) => teamName(s, g.team) + " " + fbWho(g) + (FB_KIND_WORDS[g.kind] || ""));
+      $("fbGoals").textContent = goals.length ? "Last goals: " + goals.join(" · ") : "";
+      updateFootballUI();
     } else if (isCR) {
       showCricket(s);
       if (needToss) {
@@ -1055,7 +1501,7 @@
   }
 
   function hideAllViews() {
-    for (const id of ["ttView", "simpleView", "crView", "bbView", "kbView", "ttControls", "simpleControls", "bbControls", "kbControls", "crToss", "crControls", "undoRow"]) {
+    for (const id of ["ttView", "simpleView", "crView", "bbView", "kbView", "fbView", "ttControls", "simpleControls", "bbControls", "kbControls", "fbControls", "crToss", "crControls", "undoRow"]) {
       $(id).style.display = "none";
     }
   }
@@ -1107,6 +1553,12 @@
     kbPick = kbFresh();
     $("kbSent").textContent = "";
     $("kbFix").style.display = "none";
+    fbForm = null;
+    fbPenaltyDoneAt = -1;
+    fbShootPick = { kicks: null, first: null };
+    $("fbSent").textContent = "";
+    $("fbKickSent").textContent = "";
+    $("fbFix").style.display = "none";
     $("crLast").textContent = "";
     $("name").textContent = "Loading...";
     join();

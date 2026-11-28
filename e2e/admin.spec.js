@@ -123,7 +123,7 @@ test.describe("admin page (today's behaviour)", () => {
     await page.getByRole("button", { name: "+ New match" }).click();
     await expect(page.locator("#formBox")).toBeVisible();
     await expect(page.locator("#lockNote")).toBeHidden();
-    const groups = { cricket: "#crGroup", table_tennis: "#ttGroup", volleyball: "#vbGroup", basketball: "#bbGroup", kabaddi: "#kbGroup", simple: null };
+    const groups = { cricket: "#crGroup", table_tennis: "#ttGroup", volleyball: "#vbGroup", basketball: "#bbGroup", kabaddi: "#kbGroup", football: "#fbGroup", simple: null };
     for (const [sport, shown] of Object.entries(groups)) {
       await page.locator("#fSport").selectOption(sport);
       for (const g of Object.values(groups).filter(Boolean)) {
@@ -216,6 +216,29 @@ test.describe("admin page (today's behaviour)", () => {
     await page.locator("#fTeamB").fill("Bee " + tag());
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.locator("#fErr")).toHaveText("kabaddi is only for Boys and Girls");
+    await page.getByRole("button", { name: "Cancel" }).click();
+  });
+
+  test("college rules: football Boys 6-a-side 2 x 15, Girls 5-a-side 2 x 7 (every stage); only Boys and Girls", async ({ page }) => {
+    await login(page);
+    await page.getByRole("button", { name: "+ New match" }).click();
+    await page.locator("#fSport").selectOption("football");
+    const hint = page.locator("#fbHint");
+    const pick = async (category, stage) => {
+      await page.locator("#fCat").selectOption(category);
+      await page.locator("#fStage").selectOption(stage);
+    };
+    const rule = (p, m) => "College rule: " + p + "-a-side, 2 halves of " + m + " minutes (set from the category)";
+    await pick("boys", "group");        await expect(hint).toHaveText(rule(6, 15));
+    await pick("boys", "final");        await expect(hint).toHaveText(rule(6, 15));
+    await pick("girls", "semi_final");  await expect(hint).toHaveText(rule(5, 7));
+
+    await pick("mix", "group");
+    await expect(hint).toHaveText("Football is only for Student Boys and Student Girls");
+    await page.locator("#fTeamA").fill("Ant " + tag());
+    await page.locator("#fTeamB").fill("Bee " + tag());
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator("#fErr")).toHaveText("football is only for Boys and Girls");
     await page.getByRole("button", { name: "Cancel" }).click();
   });
 

@@ -1195,10 +1195,15 @@ const { createQueue } = require("./public/queue");
     const q2 = createQueue({ storage: memStore(), now: () => 1 });
     q2.add(E("t1", { type: "toss", matchId: "m2" }), "rahul");
     q2.add(E("t2"), "neha");
-    assert.deepStrictEqual(q2.pending("rahul"), [{ matchId: "m2", type: "toss" }]);
-    assert.deepStrictEqual(q2.pending("neha"), [{ matchId: "m1", type: "point" }]);
+    assert.deepStrictEqual(q2.pending("rahul"), [{ matchId: "m2", type: "toss", data: null }]);
+    assert.deepStrictEqual(q2.pending("neha"), [{ matchId: "m1", type: "point", data: null }]);
     q2.pending("rahul")[0].type = "changed";
     assert.strictEqual(q2.pending("rahul")[0].type, "toss", "a copy: changing it does not change the queue");
+    // with the data (football follows its waiting shootout kicks), also a copy
+    q2.add(E("k1", { type: "kick", data: { team: "B", outcome: "saved" } }), "rahul");
+    assert.deepStrictEqual(q2.pending("rahul")[1], { matchId: "m1", type: "kick", data: { team: "B", outcome: "saved" } });
+    q2.pending("rahul")[1].data.team = "A";
+    assert.strictEqual(q2.pending("rahul")[1].data.team, "B", "the data is a copy too");
   }
   assert.deepStrictEqual(Object.keys(q.payload(q.head("rahul"))).sort(), ["data", "id", "matchId", "team", "type", "value"],
     "only the fields the server knows are sent");

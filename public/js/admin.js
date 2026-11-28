@@ -6,7 +6,7 @@ let session = JSON.parse(localStorage.getItem(SKEY) || "null");
 let overview = { matches: [], users: [], teams: [], competitions: [] };
 let editingId = null;
 
-const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", basketball: "Basketball", kabaddi: "Kabaddi", simple: "Other sport" };
+const SPORT_NAMES = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", basketball: "Basketball", kabaddi: "Kabaddi", football: "Football", simple: "Other sport" };
 
 function el(tag, text, cls) {
   const e = document.createElement(tag);
@@ -118,6 +118,7 @@ function renderMatches() {
     if (m.sport === "cricket" && m.config) bits.push(m.config.overs + " overs");
     if (m.sport === "basketball" && m.config) bits.push("4 x " + m.config.quarterMinutes + " min");
     if (m.sport === "kabaddi" && m.config) bits.push("2 x " + m.config.halfMinutes + " min");
+    if (m.sport === "football" && m.config) bits.push(m.config.players + "-a-side, 2 x " + m.config.halfMinutes + " min");
     if (m.teamA) bits.push(m.teamA + " vs " + m.teamB);
     if (m.startTime) bits.push(new Date(m.startTime).toLocaleString([], timeFmt));
     if (m.venue) bits.push(m.venue);
@@ -182,6 +183,7 @@ function sportChanged() {
   $("vbGroup").style.display = s === "volleyball" ? "block" : "none";
   $("bbGroup").style.display = s === "basketball" ? "block" : "none";
   $("kbGroup").style.display = s === "kabaddi" ? "block" : "none";
+  $("fbGroup").style.display = s === "football" ? "block" : "none";
 }
 
 // Basketball: quarter length from the stage (college rule, the table comes from the server; not editable).
@@ -207,6 +209,17 @@ function showKabaddiHint() {
   $("kbHint").className = warn ? "small warn" : "small";
 }
 
+// Football: players and half length from the category (college rule, the table comes from the server; not editable).
+function showFootballHint() {
+  const cat = $("fCat").value;
+  const f = (overview.footballFormat || {})[cat];
+  let hint = f ? "College rule: " + f.players + "-a-side, 2 halves of " + f.minutes + " minutes (set from the category)" : "";
+  let warn = false;
+  if (cat && cat !== "boys" && cat !== "girls") { hint = "Football is only for Student Boys and Student Girls"; warn = true; }
+  $("fbHint").textContent = hint;
+  $("fbHint").className = warn ? "small warn" : "small";
+}
+
 // College rule: the overs come from the category and the stage (the table comes from the server).
 // Only fills the box when the admin changes sport, category or stage; the admin can still type another number.
 function collegeRule() {
@@ -227,6 +240,7 @@ function showOversHint() {
   $("oversHint").className = rule || !cat ? "small" : "small warn";
   showBasketballHint();
   showKabaddiHint();
+  showFootballHint();
 }
 
 function fillCollegeOvers() {
