@@ -9,6 +9,18 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-28 - Deployed football on the server (by hand): migration 010
+- **What:** deploy of `199876c` by the user on the server (backup, `git pull`, `docker compose build`, `migrate.js` for 010_football.sql, `docker compose up -d`).
+- **Checked:** the user reports it is deployed and "everything works perfectly". (Claude did not see the server output.)
+- **NOT checked:** a full football match with a real scorer phone during the event.
+- **Undo:** `git checkout 3db62ee` (or revert `199876c`, `893314e`, `945d284`), `docker compose build`, `docker compose up -d`. Migration 010 can stay (it only allows more event types). Not during a live football match.
+
+## 2026-11-28 - Football (945d284, 893314e, 199876c) pushed; all 4 CI jobs green
+- **What:** `git push` of `945d284`, `893314e`, `199876c` (`3db62ee..199876c`). NOT deployed yet.
+- **Checked:** GitHub Actions run 46137362879 for `199876c`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API).
+- **Next (by hand, when the user decides):** deploy WITH a migration: `./scripts/backup.sh`, `git pull`, `docker compose build`, `docker compose run --rm app node migrate.js` (must print "applied 010_football.sql"), `docker compose up -d`; hard reload; scorers reload the scorer page.
+- **Undo:** see the entries below (revert the 3 football commits; migration 010 can stay).
+
 ## 2026-11-28 - Football 3/3: the students' match page feels live
 - **What:** `public/js/match-logic.js`: `footballLines(s)` (the half and format, "HT 0-1 · FT 1-1 · ET HT · AET" line, banner: Kick-off soon / HALF TIME / FULL TIME level / PENALTY SHOOTOUT, "PENALTY TO CSE!", scorers per team "#9 Rahul", "#7 (fk)", "(og)", "(pen)", every goal / penalty / card newest first, shootout rows), `footballPop(prev, next)` (the newest NEW moment by seq: "GOAL! CSE #9 Rahul · 1-0", OWN GOAL!, FREE-KICK GOAL!, PENALTY GOAL!, PENALTY SAVED!, PENALTY MISSED!, RED CARD!, Yellow card, shootout "ECE SCORES! (penalty 2)" / "SAVED! ..." + "... WIN ON PENALTIES!"; nothing on page open, for a resent state, an UNDO or a removed goal), screen-reader sentence for football. `public/match.html` + `public/js/match.js` + `public/css/match.css`: the pop-up box shared with kabaddi (6 s), a blinking "PENALTY TO CSE!" box, scorers under each team, the shootout as rows of marks (green = scored, X = saved/missed, empty = to come; with an aria-label), "Match events" with yellow/red card marks. No inline script (CSP unchanged). `PROJECT_CONTEXT.md`: football section, lists, status.
 - **Why:** part 3 of the football plan: students must feel the match live (user's wish).
