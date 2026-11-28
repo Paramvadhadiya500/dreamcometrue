@@ -135,7 +135,7 @@ socket.on("score:update", (s) => {
   $("history").hidden = !(isTT || isVB || isBB || isKB);
   $("cricket").hidden = !isCR;
   $("kabaddi").hidden = !isKB;
-  if (!isKB) $("kbPop").hidden = true;
+  if (!isKB) { $("kbPop").hidden = true; $("kbRaiding").hidden = true; }
 
   if (isCR) {
     showCricket(s);
@@ -242,6 +242,18 @@ function showKabaddi(s) {
     list.appendChild(li);
   }
   $("kbMomentsTitle").hidden = lines.moments.length === 0;
+
+  const raiding = lines.raiding;
+  $("kbRaiding").hidden = !raiding;
+  $("kbRaidingTitle").textContent = raiding ? raiding.title : "";
+  const badges = $("kbRaidingBadges");
+  badges.textContent = "";
+  for (const b of raiding ? raiding.badges : []) {
+    const span = document.createElement("span");
+    span.className = "kb-badge";
+    span.textContent = b;
+    badges.appendChild(span);
+  }
 
   const danger = $("kbDanger");
   danger.textContent = "";

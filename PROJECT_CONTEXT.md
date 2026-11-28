@@ -40,7 +40,7 @@ engine.js            table tennis rules + effectivePoints() (undo handling)
 engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball | kabaddi
 engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js, kabaddi.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql, 008_kabaddi.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql, 008_kabaddi.sql, 009_raid_start.sql
 categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
@@ -55,7 +55,9 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 
 ## 5. How scoring works (the core idea)
 - Event sourcing: every action is a row in `events` and is never deleted. The score is computed from the events.
-- UNDO is an event too (`type='undo'`). `effectivePoints(events)` replays the log and lets each undo cancel the latest event.
+- UNDO is an event too (`type='undo'`). `effectivePoints(events)` replays the log and lets each undo cancel the latest event,
+  EXCEPT kabaddi `raid_start` (engine.js NOT_UNDOABLE): UNDO skips it and cancels the newest other event; `canUndo()` says if there is one
+  (the server answers "nothing to undo" otherwise). audit.js and the scorer page (waitingTypes) follow the same rule.
 - A match has a `sport`. `getEngine(sport)` returns an engine with:
   `compute(events, match) -> state`, `validate(action, state) -> error text or null`, optional `clean(action) -> data to store`.
 - Action flow (`score:action` socket event, with an ack callback):
@@ -134,8 +136,15 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   to the score), needsTiebreak, knockout, ended (normal|draw|tiebreak|walkover), resultText.
   Match page: big pop-up for NEW moments (6 s; MatchLogic.kabaddiPop), banner, players on court (CSS dots), danger line (3 or fewer on court),
   "Points by type" table, big moments with points (6).
-  NOT supported: clock, player names, cards (use the court fix), substitutions, tie-break raids (only the winner), do-or-die raids.
-  Not in the AKFI text (user decided): super tackle 2 points; bonus kept when the raider is caught later; a technical point brings nobody back.
+  DO-OR-DIE (Pro Kabaddi rule, not in the AKFI text; user's choices): 2 EMPTY raids in a row by a team (nobody scored; a caught raider
+  is not empty) -> its next raid is do-or-die (state emptyRaidsA/B, doOrDieA/B; restarts every half). Empty again = raider OUT, defenders +1
+  (pointsBy.doOrDie) and one back, ALL OUT if he was the last, never a super tackle; a touch or a bonus saves it; a tackle is a normal tackle.
+  Moments do_or_die (success) and do_or_die_out. The raid is still STORED as an empty raid; the engine applies the rule.
+  RAID STARTED: `raid_start{data:{team}|{cancel:true}}` (migration 009): step 1 of the raid form sends it at once; state.raidingNow
+  {team, doOrDie, superTackleChance, defenders} until the raid, END HALF, a break or Cancel; the match page shows "CSE RAIDING NOW" with
+  DO-OR-DIE RAID / SUPER TACKLE CHANCE badges. Never scored, never taken back by UNDO.
+  NOT supported: clock, player names, cards (use the court fix), substitutions, tie-break raids (only the winner), the 30-second raid limit.
+  Not in the AKFI text (user CONFIRMED): super tackle 2 points; bonus kept when the raider is caught later; a technical point brings nobody back.
 - State of every sport also has: sport, matchId, name, version, status ("live"|"finished"), winner.
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
@@ -143,7 +152,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 - matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
-  type in: point, undo, finish, ball, end_innings, toss, end_period, raid, court, break
+  type in: point, undo, finish, ball, end_innings, toss, end_period, raid, court, break, raid_start
 - schema_migrations(name PK, applied_at)
 Rules: NEVER edit a migration that was already applied. Add a new numbered file (004_...sql). Write migrations so they can run twice (IF NOT EXISTS).
 

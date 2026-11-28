@@ -15,6 +15,13 @@
 //   break       data = { kind: "timeout", team } | { kind: "other", text } | { kind: "over" }: shown only, never scored
 //   end_period  data = { period: 1|2 }: the scorer ends half 1 or 2; refused if that half already ended (double press)
 //   finish      data = { winner: A|B }: walkover, or the tie-break winner of a level knockout match
+//   raid_start  data = { team } | { cancel: true }: "CSE RAIDING NOW" on the match page, never scored, never taken back by
+//               UNDO (engine.js effectivePoints); ended by the raid, END HALF, a break or Cancel.
+//
+// DO-OR-DIE (Pro Kabaddi rule, the user's choice): after 2 EMPTY raids in a row by a team (nobody scored: no out, no bonus,
+// raider not caught), its next raid must score. Empty again = the raider is OUT: defenders +1 and one of them back
+// (ALL OUT if he was the last), never a super tackle. A touch or a bonus saves it; a tackle is a normal tackle.
+// The count is per team and restarts at half time.
 //
 // After half 2: the higher score wins. Level: a group match is a draw; a knockout match waits for
 // the scorer to enter the tie-break winner (the 5 raids + golden raid are played on the mat, not scored here).
@@ -26,6 +33,7 @@ const ALL_OUT_POINTS = 2;
 const SUPER_TACKLE_MAX = 3;      // defenders on court at most this: a tackle is worth 2
 const BONUS_MIN = 6;             // defenders on court at least this: bonus allowed
 const SUPER_RAID_MIN = 3;        // raid points at least this: "super raid" (shown only)
+const DO_OR_DIE_AFTER = 2;       // empty raids in a row: the next raid is do-or-die
 const HIGHLIGHTS = 10;           // how many special moments the state keeps (newest first)
 const BREAK_TEXT_MAX = 40;
 const DEFAULT_CONFIG = { halfMinutes: 15, knockout: false };
@@ -87,6 +95,12 @@ function breakOf(data) {
   return null;
 }
 
+function raidStartOf(data) {
+  if (!isObject(data)) return null;
+  if (data.cancel === true) return { cancel: true };
+  return isTeam(data.team) ? { team: data.team } : null;
+}
+
 function courtOf(data) {
   if (!isObject(data) || !isTeam(data.team) || (data.change !== 1 && data.change !== -1)) return null;
   return { team: data.team, change: data.change };
@@ -107,9 +121,12 @@ function compute(events, match) {
   let winner = null;
   let ended = null;
   let needsTiebreak = false;
+  const empty = { A: 0, B: 0 };          // empty raids in a row, this half
+  let raidingNow = null;                 // team of the raid going on now (RAID STARTED), or null
 
   // points by type for each team (raid = touch + bonus); they always add up to the score
-  const by = { A: { raid: 0, tackle: 0, allOut: 0, technical: 0, correction: 0 }, B: { raid: 0, tackle: 0, allOut: 0, technical: 0, correction: 0 } };
+  const zero = () => ({ raid: 0, tackle: 0, allOut: 0, doOrDie: 0, technical: 0, correction: 0 });
+  const by = { A: zero(), B: zero() };
   const add = (t, n, type) => { score[t] += n; current[t] += n; by[t][type] += n; };
   // a special moment, with the points it gave (super raid: also how, out + bonus)
   const mark = (kind, team, points, extra) => {
@@ -132,10 +149,24 @@ function compute(events, match) {
       const def = att && other(att);
       if (!r || r.out > onCourt[def] || (r.caught && r.out > 0) || (r.bonus && onCourt[def] < BONUS_MIN)) continue;
       const defendersBefore = onCourt[def];
+      const doOrDie = empty[att] >= DO_OR_DIE_AFTER;
+      const isEmpty = !r.caught && r.out === 0 && !r.bonus;
+      const doOrDieOut = doOrDie && isEmpty;                          // the do-or-die raid scored nothing: raider OUT
       const bonus = r.bonus ? 1 : 0;
       let defencePoints = 0, allOut = false, superTackle = false;
       add(att, bonus, "raid");
-      if (!r.caught) {
+      if (doOrDieOut) {
+        defencePoints = 1;
+        add(def, 1, "doOrDie");
+        onCourt[def] = Math.min(PLAYERS, onCourt[def] + 1);           // one defender back, as for a tackle
+        onCourt[att] -= 1;
+        if (onCourt[att] === 0) {                                     // the raider was the last one: ALL OUT
+          add(def, ALL_OUT_POINTS, "allOut");
+          defencePoints += ALL_OUT_POINTS;
+          onCourt[att] = PLAYERS;
+          allOut = true;
+        }
+      } else if (!r.caught) {
         add(att, r.out, "raid");
         onCourt[att] = Math.min(PLAYERS, onCourt[att] + r.out);       // revival: one per defender put out
         onCourt[def] -= r.out;
@@ -157,13 +188,23 @@ function compute(events, match) {
           allOut = true;
         }
       }
-      const raidPoints = bonus + (r.caught ? 0 : r.out + (allOut ? ALL_OUT_POINTS : 0));
+      const lostRaider = r.caught || doOrDieOut;
+      const raidPoints = bonus + (lostRaider ? 0 : r.out + (allOut ? ALL_OUT_POINTS : 0));
       const superRaid = !r.caught && bonus + r.out >= SUPER_RAID_MIN;
+      if (doOrDie && !r.caught && !isEmpty) mark("do_or_die", att, r.out + bonus);
+      if (doOrDieOut) mark("do_or_die_out", def, 1);
       if (superRaid) mark("super_raid", att, r.out + bonus, { out: r.out, bonus: r.bonus });
       if (superTackle) mark("super_tackle", def, 2);
-      if (allOut) mark("all_out", r.caught ? def : att, ALL_OUT_POINTS);
-      lastRaid = { team: att, out: r.out, bonus: r.bonus, caught: r.caught, raidPoints, defencePoints, superRaid, superTackle, allOut };
+      if (allOut) mark("all_out", lostRaider ? def : att, ALL_OUT_POINTS);
+      lastRaid = { team: att, out: r.out, bonus: r.bonus, caught: r.caught, raidPoints, defencePoints, superRaid, superTackle, allOut,
+        doOrDie, doOrDieOut };
+      empty[att] = isEmpty && !doOrDie ? empty[att] + 1 : 0;          // any point (either side) or a do-or-die raid: start again
+      raidingNow = null;
       breakNow = null;                                                // a raid means play is on
+    } else if (e.type === "raid_start") {
+      const s = raidStartOf(e.data);
+      if (!s) continue;
+      raidingNow = s.cancel ? null : s.team;
     } else if (e.type === "point") {
       if (!isTeam(e.team)) continue;
       if (e.value === 1) { add(e.team, 1, "technical"); mark("technical", e.team, 1); }
@@ -176,6 +217,7 @@ function compute(events, match) {
     } else if (e.type === "break") {
       const b = breakOf(e.data);
       if (!b) continue;
+      raidingNow = null;                                              // play stopped
       if (b.kind === "over") breakNow = null;
       else {
         breakNow = b;
@@ -185,6 +227,8 @@ function compute(events, match) {
       halves.push([current.A, current.B]);
       current.A = 0; current.B = 0;
       timeouts.A = 0; timeouts.B = 0;
+      empty.A = 0; empty.B = 0;                                       // the do-or-die count restarts every half
+      raidingNow = null;
       breakNow = halves.length < HALVES ? { kind: "half_time" } : null;
       if (halves.length >= HALVES) {
         if (score.A !== score.B) { winner = score.A > score.B ? "A" : "B"; ended = "normal"; }
@@ -219,6 +263,12 @@ function compute(events, match) {
     halves,
     onCourtA: onCourt.A, onCourtB: onCourt.B,
     timeoutsA: timeouts.A, timeoutsB: timeouts.B,
+    emptyRaidsA: empty.A, emptyRaidsB: empty.B,
+    doOrDieA: empty.A >= DO_OR_DIE_AFTER, doOrDieB: empty.B >= DO_OR_DIE_AFTER,
+    raidingNow: raidingNow && !winner && !needsTiebreak
+      ? { team: raidingNow, doOrDie: empty[raidingNow] >= DO_OR_DIE_AFTER,
+          superTackleChance: onCourt[other(raidingNow)] <= SUPER_TACKLE_MAX, defenders: onCourt[other(raidingNow)] }
+      : null,
     pointsBy: by,
     breakNow: winner ? null : breakNow,
     lastRaid,
@@ -240,6 +290,12 @@ function validate(action, state) {
   if (state.needsTiebreak) {
     if (action.type !== "finish") return "the match is level: choose the tie-break winner";
     return data && isTeam(data.winner) ? null : "choose the winner";
+  }
+
+  if (action.type === "raid_start") {
+    if (data && data.cancel === true) return state.raidingNow ? null : "no raid has started";
+    if (!data || !isTeam(data.team)) return "bad team";
+    return null;
   }
 
   if (action.type === "raid") {
@@ -298,6 +354,7 @@ function validate(action, state) {
 function clean(action) {
   const d = action.data;
   if (action.type === "raid") return raidOf(d);
+  if (action.type === "raid_start") return raidStartOf(d);
   if (action.type === "court") return courtOf(d);
   if (action.type === "break") return breakOf(d);
   if (action.type === "end_period") return isObject(d) && (d.period === 1 || d.period === 2) ? { period: d.period } : null;

@@ -53,6 +53,13 @@ h1 { font-size: 22px; margin: 4px 0 2px; }
           padding: 10px 12px; border-radius: var(--radius); margin: 12px 0 0; overflow-wrap: anywhere; }
 .kb-pop-in { animation: kb-pop 0.5s ease-out; }
 @keyframes kb-pop { from { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.06); opacity: 1; } }
+.kb-raiding { border: 3px solid var(--live); border-radius: var(--radius); padding: 8px 10px; margin: 12px 0 0; }
+.kb-raiding-title { margin: 0; font-size: 20px; font-weight: 800; color: var(--live); overflow-wrap: anywhere;
+                    animation: kb-blink 1.2s ease-in-out infinite; }
+@keyframes kb-blink { 50% { opacity: 0.45; } }
+.kb-badges { margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.kb-badges:empty { display: none; }
+.kb-badge { background: var(--highlight); color: var(--on-highlight); font-weight: bold; font-size: 14px; padding: 3px 8px; border-radius: 4px; }
 .kb-danger p { color: var(--live); font-weight: bold; margin: 8px 0 0; }
 .kb-table { width: 100%; border-collapse: collapse; margin: 14px 0 0; font-size: 15px; font-variant-numeric: tabular-nums; table-layout: fixed; }
 .kb-table caption { font-weight: bold; text-align: center; margin-bottom: 4px; }

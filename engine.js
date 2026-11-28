@@ -36,13 +36,28 @@ function computeTableTennis(events, bestOf = 3) {
 
 // ---- Undo handling (now works for ANY kind of event) ----
 // Replays the log: every undo cancels the most recent event still counted.
+// Entries UNDO never takes back: kabaddi "raid started" (shown only). UNDO takes back the newest OTHER entry,
+// so a scorer who tapped "CSE raids" and then presses UNDO still takes back the last scoring entry.
+// Other sports have no such entries: for them nothing changes.
+const NOT_UNDOABLE = new Set(["raid_start"]);
+
 function effectivePoints(events) {
     const stack = [];
     for (const e of events) {
-        if (e.type === "undo") stack.pop();
-        else stack.push(e);
+        if (e.type === "undo") {
+            for (let i = stack.length - 1; i >= 0; i--) {
+                if (!NOT_UNDOABLE.has(stack[i].type)) { stack.splice(i, 1); break; }
+            }
+        } else {
+            stack.push(e);
+        }
     }
     return stack;
 }
 
-module.exports = { computeTableTennis, effectivePoints };
+// true when an UNDO would take something back
+function canUndo(events) {
+    return effectivePoints(events).some((e) => !NOT_UNDOABLE.has(e.type));
+}
+
+module.exports = { computeTableTennis, effectivePoints, canUndo, NOT_UNDOABLE };

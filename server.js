@@ -7,7 +7,7 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const pool = require("./db");
-const { effectivePoints } = require("./engine");
+const { effectivePoints, canUndo } = require("./engine");
 const { getEngine } = require("./engines");
 const { createHome } = require("./home");
 const { competitionOf } = require("./standings");
@@ -192,7 +192,7 @@ async function applyAction({ id, matchId, type, team, value, data }, username) {
     }
 
     if (type === "undo") {
-      if (effectivePoints(ev.rows).length === 0) return await fail("nothing to undo");
+      if (!canUndo(ev.rows)) return await fail("nothing to undo");
     } else {
       const problem = engine.validate({ type, team, value, data }, state);   // the sport's own rules
       if (problem) return await fail(problem);

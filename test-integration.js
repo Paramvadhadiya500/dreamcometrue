@@ -476,6 +476,31 @@ test("9c. kabaddi: raid, court and break are stored (migration 008), only the cl
   assert.deepStrictEqual([a.state.status, a.state.winner, a.state.resultText], ["finished", "draw", "Draw 9-9"]);
 });
 
+test("9d. kabaddi: raid_start stored (migration 009), UNDO skips it, a do-or-die raid with no point puts the raider out", async () => {
+  const match = "it-" + RUN + "-kb2";
+  await pool.query("INSERT INTO matches (id, name, sport, config) VALUES ($1, 'Integration kb2', 'kabaddi', $2)",
+    [match, JSON.stringify({ halfMinutes: 15, knockout: false })]);
+  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ('it_scorer1', $1)", [match]);
+  const s1 = await scorer("it_scorer1");
+  const start = (team) => ({ id: newId(), type: "raid_start", data: { team } });
+  const raid = (team, out) => ({ id: newId(), type: "raid", data: { team, out, bonus: false, caught: false } });
+
+  let a = await act(s1, match, start("A"));
+  assert.strictEqual(a.ok, true, "raid_start must be accepted by the database: " + JSON.stringify(a));
+  assert.deepStrictEqual(a.state.raidingNow, { team: "A", doOrDie: false, superTackleChance: false, defenders: 7 });
+  a = await act(s1, match, { id: newId(), type: "undo" });
+  assert.deepStrictEqual([a.ok, a.error], [false, "nothing to undo"], "only a raid start: nothing to take back");
+  a = await act(s1, match, raid("A", 1));
+  a = await act(s1, match, start("B"));
+  a = await act(s1, match, { id: newId(), type: "undo" });
+  assert.deepStrictEqual([a.ok, a.state.scoreA, a.state.raidingNow.team], [true, 0, "B"], "UNDO took back the raid, not the raid start");
+  for (const t of ["A", "B", "A", "B"]) await act(s1, match, raid(t, 0));     // 2 empty raids each
+  a = await act(s1, match, start("A"));
+  assert.strictEqual(a.state.raidingNow.doOrDie, true);
+  a = await act(s1, match, raid("A", 0));
+  assert.deepStrictEqual([a.state.scoreB, a.state.onCourtA, a.state.lastRaid.doOrDieOut], [1, 6, true]);
+});
+
 test("10. SIGTERM (what Docker sends on stop/restart): the server closes cleanly and exits 0 within 3 s", async () => {
   if (process.platform === "win32") {
     console.log("     (skipped on Windows: it has no SIGTERM; GitHub and the Linux container run this case)");

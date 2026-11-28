@@ -402,6 +402,11 @@ const blockedTest = (async () => {
   const shown = (w, id) => w.el(id).style.display === "block";
   const last = (w) => JSON.stringify([w.sent[0].payload.type, w.sent[0].payload.team, w.sent[0].payload.value, w.sent[0].payload.data]);
   const text = (w, id) => w.el(id).textContent;
+  // tap "RAID STARTED" for a team: the page sends raid_start at once; when it is first in the queue, the fake server answers it
+  const team = (w, t) => {
+    w.ctx.pickRaid("team", t);
+    if (w.sent.length && w.sent[0].payload.type === "raid_start") w.ack({ ok: true });
+  };
 
   const w = makeWorld({ preset: { "scorer-session": session } });
   w.connect();
@@ -415,8 +420,13 @@ const blockedTest = (async () => {
   w.ctx.saveRaid();
   assert.strictEqual(w.sent.length, 0);
 
-  // a raid: CSE raids, 2 out + bonus
-  w.ctx.pickRaid("team", "A"); w.ctx.pickRaid("out", 2); w.ctx.pickRaid("bonus", true);
+  // a raid: CSE raids, 2 out + bonus. Tapping the team sends "raid started" at once (students see "CSE RAIDING NOW")
+  w.ctx.pickRaid("team", "A");
+  assert.strictEqual(last(w), JSON.stringify(["raid_start", null, null, { team: "A" }]));
+  w.ack({ ok: true });
+  w.ctx.pickRaid("team", "A");
+  assert.strictEqual(w.sent.length, 0, "tapping the same team again sends nothing");
+  w.ctx.pickRaid("out", 2); w.ctx.pickRaid("bonus", true);
   assert.deepStrictEqual([w.el("kbRaidA").className, w.el("kbRaidB").className, w.el("kbOut2").className, w.el("kbBonusYes").className],
     ["teamA on", "teamB", "on", "on"], "the chosen buttons are marked");
   assert.strictEqual(text(w, "kbSummary"), "CSE +3 (2 out + bonus)");
@@ -430,7 +440,9 @@ const blockedTest = (async () => {
   assert.strictEqual(w.sent.length, 1, "a double tap on SAVE RAID sends the raid once");
   w.ctx.pickRaid("team", "B");
   w.ctx.saveRaid();
-  assert.strictEqual(text(w, "pending"), "2 entries waiting to be sent", "a fast next raid is NOT dropped (no timer)");
+  assert.strictEqual(text(w, "pending"), "3 entries waiting to be sent", "a fast next raid is NOT dropped (no timer): raid A, start B, raid B");
+  w.ack({ ok: true });
+  assert.strictEqual(last(w), JSON.stringify(["raid_start", null, null, { team: "B" }]));
   w.ack({ ok: true });
   assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "B", out: 0, bonus: false, caught: false }]), "then it is sent");
   w.ack({ ok: true });
@@ -440,14 +452,14 @@ const blockedTest = (async () => {
   w.ctx.showState(kbState([R("A", 2, true)]));
   assert.deepStrictEqual([text(w, "kbCourt"), text(w, "kbHalves"), text(w, "kbLast"), text(w, "kbA")],
     ["On court: CSE 7 · ECE 5", "H1 3-0 (now)", "Last raid: CSE raid: 2 out + bonus", "3"]);
-  w.ctx.pickRaid("team", "A");
+  team(w, "A");
   assert.deepStrictEqual([w.el("kbOut5").disabled, w.el("kbOut6").disabled, w.el("kbOut7").disabled], [false, true, true], "ECE has only 5 on court");
   assert.strictEqual(w.el("kbBonusYes").disabled, true, "no bonus with fewer than 6 defenders");
-  w.ctx.pickRaid("team", "B");
+  team(w, "B");
   assert.deepStrictEqual([w.el("kbOut7").disabled, w.el("kbBonusYes").disabled], [false, false], "CSE has 7");
   w.ctx.pickRaid("out", 7); w.ctx.pickRaid("bonus", true);
   assert.strictEqual(text(w, "kbSummary"), "ECE +10 (7 out + bonus + ALL OUT +2)", "the biggest raid");
-  w.ctx.pickRaid("team", "A");
+  team(w, "A");
   assert.deepStrictEqual([w.el("kbOut0").className, w.el("kbBonusNo").className], ["on", "on"], "7 out and bonus are reset: ECE has only 5");
   w.ctx.pickRaid("out", 5);
   assert.strictEqual(text(w, "kbSummary"), "CSE +7 (5 out + ALL OUT +2)");
@@ -463,13 +475,13 @@ const blockedTest = (async () => {
   w.ctx.showState(kbState([R("A", 4), ...Array(6).fill({ type: "court", data: { team: "A", change: -1 } })]));
   w.ctx.pickRaid("caught", true);
   assert.strictEqual(text(w, "kbSummary"), "Raider OUT: ECE +4 SUPER TACKLE + ALL OUT");
-  w.ctx.pickRaid("team", "B");
+  team(w, "B");
   w.ctx.pickRaid("bonus", true);
   assert.strictEqual(text(w, "kbSummary"), "Raider OUT: CSE +2 SUPER TACKLE", "CSE (1 on court) tackles: super tackle; no bonus with 1 defender");
   assert.strictEqual(w.el("kbBonusNo").className, "on");
   // bonus + raider OUT (the referee gave the bonus first): both shown
   w.ctx.showState(kbState([]));
-  w.ctx.pickRaid("team", "A"); w.ctx.pickRaid("bonus", true); w.ctx.pickRaid("caught", true);
+  team(w, "A"); w.ctx.pickRaid("bonus", true); w.ctx.pickRaid("caught", true);
   assert.strictEqual(text(w, "kbSummary"), "Raider OUT: ECE +1, CSE +1 bonus");
   w.ctx.saveRaid();
   assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "A", out: 0, bonus: true, caught: true }]));
@@ -569,7 +581,41 @@ const blockedTest = (async () => {
   assert.strictEqual(last(w), JSON.stringify(["court", null, null, { team: "A", change: -1 }]));
   w.ack({ ok: true });
 
+  // do-or-die: the scorer sees the empty-raid count; the summary says DO-OR-DIE; an empty do-or-die raid asks first
+  w.ctx.showState(kbState([R("A"), R("B"), R("A")]));                  // CSE: 2 empty raids, ECE: 1
+  assert.strictEqual(text(w, "kbDod"), "Empty raids: CSE 2 (next raid DO-OR-DIE) · ECE 1");
+  team(w, "A");
+  assert.strictEqual(text(w, "kbSummary"), "DO-OR-DIE, no point: raider OUT, ECE +1");
+  w.setConfirm(false); w.ctx.saveRaid();
+  assert.strictEqual(w.confirms.at(-1), "DO-OR-DIE raid with no point: the raider is OUT and ECE gets 1 point. Save?");
+  assert.strictEqual(w.sent.length, 0, "Cancel: nothing sent, the form stays");
+  w.ctx.pickRaid("bonus", true);
+  assert.strictEqual(text(w, "kbSummary"), "DO-OR-DIE: CSE +1 (bonus)", "a bonus saves it");
+  w.ctx.pickRaid("bonus", false);
+  w.setConfirm(true); w.ctx.saveRaid();
+  assert.strictEqual(last(w), JSON.stringify(["raid", null, null, { team: "A", out: 0, bonus: false, caught: false }]),
+    "stored as an empty raid; the server applies the do-or-die rule");
+  w.ack({ ok: true });
+  w.ctx.showState(kbState([]));
+  assert.strictEqual(text(w, "kbDod"), "", "no empty raids: no line");
+
+  // Cancel raid: only while a raid is started on this phone; sends cancel and empties the form
+  assert.strictEqual(w.el("kbCancel").style.display, "none");
+  team(w, "B");
+  assert.strictEqual(w.el("kbCancel").style.display, "block");
+  w.ctx.cancelRaid();
+  assert.strictEqual(last(w), JSON.stringify(["raid_start", null, null, { cancel: true }]));
+  w.ack({ ok: true });
+  assert.deepStrictEqual([text(w, "kbSummary"), w.el("kbCancel").style.display], ["Tap who raided", "none"]);
+  // a raid started on another phone (or before a reload): the form picks the team up, nothing is sent
+  w.ctx.showState(kbState([{ type: "raid_start", data: { team: "B" } }]));
+  assert.deepStrictEqual([w.el("kbRaidB").className, w.sent.length], ["teamB on", 0]);
+  w.ctx.cancelRaid();
+  w.ack({ ok: true });
+
   // the texts of waiting / rejected entries
+  assert.strictEqual(w.ctx.entryText({ matchId: "m1", type: "raid_start", data: { team: "B" } }), "Match 1: Raid started: team B");
+  assert.strictEqual(w.ctx.entryText({ matchId: "m1", type: "raid_start", data: { cancel: true } }), "Match 1: Raid cancelled");
   const et = (x) => w.ctx.entryText({ matchId: "m1", ...x });
   assert.strictEqual(et(R("A", 2, true)), "Match 1: Raid by team A: 2 out + bonus");
   assert.strictEqual(et(R("B", 0, false, true)), "Match 1: Raid by team B: raider OUT");
@@ -606,7 +652,7 @@ const blockedTest = (async () => {
   w2.connect();
   const types = [];
   while (w2.sent.length) { const p = w2.ack({ ok: true }); types.push(p.type + (p.data && p.data.period ? p.data.period : "")); }
-  assert.deepStrictEqual(types, ["raid", "end_period1", "end_period2", "undo"], "sent in order, with the half numbers");
+  assert.deepStrictEqual(types, ["raid_start", "raid", "raid_start", "end_period1", "end_period2", "undo"], "sent in order, with the half numbers");
 
   // another match chosen: the kabaddi screen and the half-filled form go away
   w.ctx.pickRaid("team", "A");

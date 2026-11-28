@@ -49,7 +49,8 @@ module.exports = function testKabaddi() {
   assert.deepStrictEqual([score(k), court(k)], [[2, 1], [6, 6]], "B puts 1 out and gets 1 player back");
   k = run([R("A", 3), R("B", 2)]);
   assert.deepStrictEqual(court(k), [5, 6], "revival: B has 4, puts 2 out, gets 2 back");
-  assert.deepStrictEqual(k.lastRaid, { team: "B", out: 2, bonus: false, caught: false, raidPoints: 2, defencePoints: 0, superRaid: false, superTackle: false, allOut: false });
+  assert.deepStrictEqual(k.lastRaid, { team: "B", out: 2, bonus: false, caught: false, raidPoints: 2, defencePoints: 0, superRaid: false, superTackle: false, allOut: false,
+    doOrDie: false, doOrDieOut: false });
 
   // ---- empty raid: nothing changes ----
   k = run([EMPTY("A")]);
@@ -115,15 +116,15 @@ module.exports = function testKabaddi() {
   assert.deepStrictEqual(k.highlights.slice(0, 2).map((h) => [h.kind, h.team]), [["all_out", "B"], ["super_tackle", "B"]]);
 
   // ---- points by type (for the match page table): raid (touch + bonus), tackle, all out, technical, corrections ----
-  const zero = { raid: 0, tackle: 0, allOut: 0, technical: 0, correction: 0 };
+  const zero = { raid: 0, tackle: 0, allOut: 0, doOrDie: 0, technical: 0, correction: 0 };
   assert.deepStrictEqual(run([]).pointsBy, { A: zero, B: zero });
   k = run([CAUGHT("A", true), R("A", 2, true), R("A", 4), CAUGHT("A"), P("A", 1), P("B", 1), P("B", -1)]);
   // A: bonus 1 (raider caught), 2 out + bonus 3, 4 out 4 = raid 8; B: tackle 1, then super tackle 2 (B had 1 on court) = tackle 3
-  assert.deepStrictEqual(k.pointsBy.A, { raid: 8, tackle: 0, allOut: 0, technical: 1, correction: 0 });
-  assert.deepStrictEqual(k.pointsBy.B, { raid: 0, tackle: 3, allOut: 0, technical: 1, correction: -1 });
+  assert.deepStrictEqual(k.pointsBy.A, { ...zero, raid: 8, technical: 1 });
+  assert.deepStrictEqual(k.pointsBy.B, { ...zero, tackle: 3, technical: 1, correction: -1 });
   k = run([R("A", 7), R("B", 6), CAUGHT("A")]);
-  assert.deepStrictEqual([k.pointsBy.A, k.pointsBy.B], [{ raid: 7, tackle: 0, allOut: 2, technical: 0, correction: 0 },
-    { raid: 6, tackle: 1, allOut: 2, technical: 0, correction: 0 }], "all out points for both sides");
+  assert.deepStrictEqual([k.pointsBy.A, k.pointsBy.B], [{ ...zero, raid: 7, allOut: 2 }, { ...zero, raid: 6, tackle: 1, allOut: 2 }],
+    "all out points for both sides");
   assert.deepStrictEqual(k.highlights.slice(0, 1), [{ kind: "all_out", team: "B", points: 2, half: 1, scoreA: 9, scoreB: 9 }]);
 
   // ---- you cannot put out more players than are on court ----
@@ -333,10 +334,80 @@ module.exports = function testKabaddi() {
   assert.deepStrictEqual([rows.ECE.points, rows.ECE.drawn, rows.ECE.lost], [1, 1, 1]);
   assert.deepStrictEqual([rows.ME.points, rows.ME.drawn], [1, 1]);
 
+  // ---- do-or-die raid: after 2 EMPTY raids in a row by a team, its next raid must score (touch or bonus) ----
+  const START = (team) => ({ type: "raid_start", data: { team } });
+  const CANCEL = { type: "raid_start", data: { cancel: true } };
+  k = run([EMPTY("A"), EMPTY("B")]);
+  assert.deepStrictEqual([k.emptyRaidsA, k.emptyRaidsB, k.doOrDieA, k.doOrDieB], [1, 1, false, false]);
+  k = run([EMPTY("A"), EMPTY("B"), EMPTY("A")]);
+  assert.deepStrictEqual([k.emptyRaidsA, k.doOrDieA, k.doOrDieB], [2, true, false], "counted per team");
+  assert.strictEqual(run([EMPTY("A"), P("A", 1), EMPTY("A")]).doOrDieA, true, "a technical point is not a raid");
+  assert.strictEqual(run([EMPTY("A"), R("B", 1), EMPTY("A")]).doOrDieA, true, "the other team's raids do not reset it");
+  assert.strictEqual(run([EMPTY("A"), CAUGHT("A"), EMPTY("A")]).emptyRaidsA, 1, "a caught raider is not an empty raid (the defenders scored)");
+  assert.strictEqual(run([EMPTY("A"), R("A", 0, true), EMPTY("A")]).emptyRaidsA, 1, "a bonus is not an empty raid");
+  const dod = [EMPTY("A"), EMPTY("B"), EMPTY("A"), EMPTY("B")];         // both teams: the next raid is do-or-die
+  // FAILED (empty again): raider OUT, defenders +1, one defender back; the count starts again
+  k = run([R("A", 2), ...dod, EMPTY("A")]);
+  assert.deepStrictEqual([score(k), court(k)], [[2, 1], [6, 6]], "B (5) gets 1 point and 1 player back; A loses the raider");
+  assert.deepStrictEqual(k.lastRaid, { team: "A", out: 0, bonus: false, caught: false, raidPoints: 0, defencePoints: 1,
+    superRaid: false, superTackle: false, allOut: false, doOrDie: true, doOrDieOut: true });
+  assert.deepStrictEqual(k.highlights[0], { kind: "do_or_die_out", team: "B", points: 1, half: 1, scoreA: 2, scoreB: 1 });
+  assert.deepStrictEqual([k.emptyRaidsA, k.doOrDieA, k.doOrDieB], [0, false, true]);
+  assert.deepStrictEqual(k.pointsBy.B, { ...zero, doOrDie: 1 });
+  k = run([R("A", 4), ...dod, EMPTY("A")]);                             // B has 3 on court
+  assert.deepStrictEqual([k.scoreB, k.lastRaid.superTackle], [1, false], "never a super tackle: the raider was not tackled");
+  k = run([...Array(6).fill(COURT("A", -1)), ...dod, EMPTY("A")]);      // A's last player fails the do-or-die
+  assert.deepStrictEqual([score(k), court(k), k.lastRaid.allOut], [[0, 3], [7, 7], true], "do-or-die out 1 + ALL OUT 2");
+  assert.deepStrictEqual(k.highlights.slice(0, 2).map((h) => h.kind), ["all_out", "do_or_die_out"]);
+  // SUCCESS: a touch or a bonus saves it
+  k = run([...dod, R("A", 2)]);
+  assert.deepStrictEqual([k.lastRaid.doOrDie, k.lastRaid.doOrDieOut, k.emptyRaidsA], [true, false, 0]);
+  assert.deepStrictEqual(k.highlights[0], { kind: "do_or_die", team: "A", points: 2, half: 1, scoreA: 2, scoreB: 0 });
+  k = run([...dod, R("A", 0, true)]);
+  assert.deepStrictEqual([score(k), k.highlights[0].kind, k.highlights[0].points], [[1, 0], "do_or_die", 1], "a bonus alone saves it");
+  // tackled in a do-or-die raid: a normal tackle (no do-or-die moment)
+  k = run([...dod, CAUGHT("A")]);
+  assert.deepStrictEqual([score(k), k.highlights.length, k.emptyRaidsA, k.lastRaid.doOrDie, k.lastRaid.doOrDieOut], [[0, 1], 0, 0, true, false]);
+  // the count restarts at half time
+  k = run([...dod, END(1)]);
+  assert.deepStrictEqual([k.emptyRaidsA, k.emptyRaidsB, k.doOrDieA, k.doOrDieB], [0, 0, false, false]);
+  // undo of a failed do-or-die brings the do-or-die back
+  k = run([...dod, EMPTY("A"), undo]);
+  assert.deepStrictEqual([score(k), k.doOrDieA, k.emptyRaidsA], [[0, 0], true, 2]);
+
+  // ---- RAID STARTED: shown live, never scored; ended by the raid, END HALF, a break, or Cancel ----
+  assert.strictEqual(run([]).raidingNow, null);
+  assert.deepStrictEqual(run([START("A")]).raidingNow, { team: "A", doOrDie: false, superTackleChance: false, defenders: 7 });
+  assert.deepStrictEqual(run([...dod, START("B")]).raidingNow, { team: "B", doOrDie: true, superTackleChance: false, defenders: 7 });
+  assert.deepStrictEqual(run([R("A", 4), START("A")]).raidingNow, { team: "A", doOrDie: false, superTackleChance: true, defenders: 3 },
+    "B has 3: a tackle would be a SUPER TACKLE");
+  assert.deepStrictEqual(run([START("A"), START("B")]).raidingNow.team, "B", "tapping the other team changes it");
+  for (const after of [R("A", 1), END(1), TIMEOUT("B"), CANCEL]) {
+    assert.strictEqual(run([START("A"), after]).raidingNow, null, "ended by " + JSON.stringify(after));
+  }
+  assert.strictEqual(run([START("A"), P("B", 1), COURT("A", -1)]).raidingNow.team, "A", "a technical point or a court fix does not end it");
+  k = run([START("A")]);
+  assert.deepStrictEqual([score(k), court(k), k.emptyRaidsA], [[0, 0], [7, 7], 0], "a raid start changes nothing else");
+  assert.strictEqual(kb.validate(START("A"), run([])), null);
+  assert.strictEqual(kb.validate(START("C"), run([])), "bad team");
+  assert.strictEqual(kb.validate({ type: "raid_start", data: null }, run([])), "bad team");
+  assert.strictEqual(kb.validate(CANCEL, run([])), "no raid has started");
+  assert.strictEqual(kb.validate(CANCEL, run([START("B")])), null);
+  assert.strictEqual(kb.validate(START("A"), run(done)), "match already finished");
+  assert.strictEqual(kb.validate(START("A"), run(levelEnd, KO)), "the match is level: choose the tie-break winner");
+  assert.deepStrictEqual(kb.clean({ type: "raid_start", data: { team: "B", junk: 1 } }), { team: "B" });
+  assert.deepStrictEqual(kb.clean({ type: "raid_start", data: { cancel: true, team: "A" } }), { cancel: true });
+  assert.strictEqual(kb.clean({ type: "raid_start", data: { team: "X" } }), null);
+  // UNDO never takes back a raid start: it takes back the newest SCORING entry
+  k = run([R("A", 2), START("B"), undo]);
+  assert.deepStrictEqual([score(k), k.raidingNow && k.raidingNow.team], [[0, 0], "B"], "UNDO removed the raid, not the raid start");
+
   // ---- random matches: 400 games, the rules checked after EVERY event ----
   const rand = rng(2028);
   const pick = (n) => Math.floor(rand() * n);
-  let finished = 0, undos = 0, allOuts = 0, superTackles = 0, bonuses = 0, refused = 0, tiebreaks = 0, draws = 0;
+  let finished = 0, undos = 0, allOuts = 0, superTackles = 0, bonuses = 0, refused = 0, tiebreaks = 0, draws = 0, dodOut = 0, dodWin = 0, starts = 0;
+  // UNDO takes back the newest entry that is not a raid start (the same rule as effectivePoints)
+  const undoKept = (kept) => { for (let i = kept.length - 1; i >= 0; i--) if (kept[i].type !== "raid_start") { kept.splice(i, 1); return true; } return false; };
   for (let g = 0; g < 400; g++) {
     const config = { halfMinutes: 15, knockout: g % 2 === 0 };
     const events = [];
@@ -347,8 +418,8 @@ module.exports = function testKabaddi() {
       let e;
       if (state.needsTiebreak) {
         e = fin(rand() < 0.5 ? "A" : "B"); tiebreaks++;
-      } else if (kept.length > 0 && x < 0.06) {
-        events.push(undo); kept.pop(); undos++;
+      } else if (kept.some((ev) => ev.type !== "raid_start") && x < 0.06) {
+        events.push(undo); undoKept(kept); undos++;
         state = run(events, config);
         continue;
       } else if (x < 0.1) {
@@ -367,12 +438,15 @@ module.exports = function testKabaddi() {
         if (kb.validate(e, state) !== null) continue;          // e.g. a correction at 0, a full court, no break on
       } else if (x < 0.145) {
         e = END(state.half);
+      } else if (x < 0.2) {
+        e = rand() < 0.15 && state.raidingNow ? CANCEL : START(rand() < 0.5 ? "A" : "B"); starts++;
       } else {
         const t = rand() < 0.5 ? "A" : "B";
         const def = t === "A" ? state.onCourtB : state.onCourtA;
         const caught = rand() < 0.35;
         const bonus = def >= 6 && rand() < 0.15;
-        e = R(t, caught ? 0 : pick(Math.min(def, 3) + 1), bonus, caught);
+        const empty = !caught && !bonus && rand() < 0.4;               // plenty of empty raids: do-or-die must happen
+        e = R(t, caught || empty ? 0 : pick(Math.min(def, 3) + 1), bonus, caught);
         if (bonus) bonuses++;
       }
       assert.strictEqual(kb.validate(e, state), null, "allowed: " + JSON.stringify(e));
@@ -382,6 +456,7 @@ module.exports = function testKabaddi() {
 
       // the rules, every time
       assert.deepStrictEqual(state, kb.compute(kept, { config }), "undo equals a fresh replay");
+      for (const n of [state.emptyRaidsA, state.emptyRaidsB]) assert.ok(n >= 0 && n <= 2, "empty raids 0 to 2");
       for (const n of [state.onCourtA, state.onCourtB]) assert.ok(Number.isInteger(n) && n >= 1 && n <= 7, "on court 1 to 7, not " + n);
       assert.ok(state.scoreA >= 0 && state.scoreB >= 0, "a score is never below 0");
       const sumA = state.halves.reduce((t, h) => t + h[0], 0) + state.currentA;
@@ -394,6 +469,13 @@ module.exports = function testKabaddi() {
         const gained = state.scoreA + state.scoreB - before.scoreA - before.scoreB;
         assert.ok(gained >= 0 && gained <= 10, "one raid gives at most 10 points");
         if (state.lastRaid.allOut) allOuts++;
+        const was = e.data.team === "A" ? before.doOrDieA : before.doOrDieB;
+        assert.strictEqual(state.lastRaid.doOrDie, was, "the raid is do-or-die exactly when the team had 2 empty raids");
+        const isEmpty = !e.data.caught && e.data.out === 0 && !e.data.bonus;
+        assert.strictEqual(state.lastRaid.doOrDieOut, was && isEmpty, "do-or-die OUT exactly when the do-or-die raid is empty");
+        if (state.lastRaid.doOrDieOut) dodOut++;
+        else if (was && !e.data.caught) dodWin++;
+        assert.strictEqual(state.raidingNow, null, "a raid ends the raid start");
         if (state.lastRaid.superTackle) {
           superTackles++;
           assert.ok((e.data.team === "A" ? before.onCourtB : before.onCourtA) <= 3, "super tackle only with 3 or fewer defenders");
@@ -418,5 +500,7 @@ module.exports = function testKabaddi() {
   assert.ok(bonuses > 100, "the random test really used bonus points (" + bonuses + ")");
   assert.ok(refused > 300, "the random test really tried forbidden actions (" + refused + ")");
   assert.ok(tiebreaks > 0, "the random test really reached a knockout tie-break (" + tiebreaks + ")");
+  assert.ok(dodOut > 50 && dodWin > 50, "the random test really had failed and saved do-or-die raids (" + dodOut + ", " + dodWin + ")");
+  assert.ok(starts > 500, "the random test really used raid starts (" + starts + ")");
   assert.ok(draws > 0, "the random test really reached a group draw (" + draws + ")");
 };

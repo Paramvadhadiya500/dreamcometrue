@@ -135,6 +135,30 @@ test("kabaddi scorer on a 360 px phone: raid form, limits, END HALF once, timeou
       await page.locator("#undo").click();
       await expect(student.locator("#sA")).toHaveText("3");
       await expect(student.locator("#kbPop")).toBeHidden();
+
+      // RAID STARTED: tapping the team shows "... RAIDING NOW" live; Cancel raid takes it away
+      await page.locator("#kbRaidA").click();
+      await expect(student.locator("#kbRaidingTitle")).toHaveText(A + " RAIDING NOW");
+      await page.locator("#kbCancel").click();
+      await expect(student.locator("#kbRaiding")).toBeHidden();
+
+      // do-or-die: 2 empty raids each, then B's do-or-die raid shows its badge, and an empty one puts the raider out
+      for (const t of ["B", "A", "B", "A"]) {
+        await page.locator("#kbRaid" + t).click();
+        await page.locator("#kbSave").click();
+      }
+      await expect(page.locator("#kbDod")).toHaveText("Empty raids: " + A + " 2 (next raid DO-OR-DIE) · " + B + " 2 (next raid DO-OR-DIE)");
+      await page.locator("#kbRaidB").click();
+      await expect(student.locator("#kbRaidingTitle")).toHaveText(B + " RAIDING NOW");
+      await expect(student.locator("#kbRaidingBadges .kb-badge")).toHaveText(["DO-OR-DIE RAID"]);
+      await expect(page.locator("#kbSummary")).toHaveText("DO-OR-DIE, no point: raider OUT, " + A + " +1");
+      await page.locator("#kbSave").click();
+      expect(dialogs.at(-1)).toBe("DO-OR-DIE raid with no point: the raider is OUT and " + A + " gets 1 point. Save?");
+      await expect(student.locator("#kbPop")).toHaveText("DO-OR-DIE OUT! " + A + " +1");
+      await expect(student.locator("#sA")).toHaveText("4");
+      await expect(student.locator("#kbRaiding")).toBeHidden();
+      await expect(student.locator("#kbMoments li").first()).toHaveText("DO-OR-DIE OUT · " + A + " +1 · H2 · 4-1");
+      expect(await student.evaluate(() => document.documentElement.scrollWidth), "no sideways scrolling").toBeLessThanOrEqual(360);
     } finally {
       await student.close();
     }

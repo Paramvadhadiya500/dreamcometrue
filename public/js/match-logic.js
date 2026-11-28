@@ -26,7 +26,9 @@
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + s.periodName + ".");
     } else if (s.sport === "kabaddi") {
       var banner = kabaddiBanner(s);
-      text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + (banner || s.halfName) + ".");
+      var r = s.raidingNow;
+      var raiding = r ? teamName(s, r.team) + " raiding now" + (r.doOrDie ? ", do-or-die raid" : "") : "";
+      text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + (raiding || banner || s.halfName) + ".");
     } else {
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + ".";
     }
@@ -106,7 +108,8 @@
     return "";
   }
 
-  var KB_MOMENTS = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "Technical point" };
+  var KB_MOMENTS = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "Technical point",
+    do_or_die: "DO-OR-DIE SUCCESS", do_or_die_out: "DO-OR-DIE OUT" };
   function dots(n, max) {
     var t = "";
     for (var i = 0; i < max; i++) t += i < n ? "●" : "○";
@@ -143,10 +146,21 @@
   function pointsTable(s) {
     var b = s.pointsBy;
     if (!b || !b.A || !b.B || s.scoreA + s.scoreB === 0) return [];
-    var rows = [["Raid", b.A.raid, b.B.raid], ["Tackle", b.A.tackle, b.B.tackle], ["All out", b.A.allOut, b.B.allOut],
-      ["Technical", b.A.technical, b.B.technical]];
+    var rows = [["Raid", b.A.raid, b.B.raid], ["Tackle", b.A.tackle, b.B.tackle], ["All out", b.A.allOut, b.B.allOut]];
+    if (b.A.doOrDie || b.B.doOrDie) rows.push(["Do-or-die out", b.A.doOrDie, b.B.doOrDie]);
+    rows.push(["Technical", b.A.technical, b.B.technical]);
     if (b.A.correction || b.B.correction) rows.push(["Corrections", b.A.correction, b.B.correction]);
     return rows;
+  }
+
+  // RAID STARTED: { title: "CSE RAIDING NOW", badges: ["DO-OR-DIE RAID", "SUPER TACKLE CHANCE (ECE 3 on court)"] } or null
+  function raidingBox(s) {
+    var r = s.raidingNow;
+    if (!r || s.status === "finished") return null;
+    var badges = [];
+    if (r.doOrDie) badges.push("DO-OR-DIE RAID");
+    if (r.superTackleChance) badges.push("SUPER TACKLE CHANCE (" + teamName(s, r.team === "A" ? "B" : "A") + " " + r.defenders + " on court)");
+    return { title: teamName(s, r.team) + " RAIDING NOW", badges: badges };
   }
 
   // Kabaddi board: the half now ("Half 1 (15 min)", null when finished or at the tie-break), finished halves
@@ -164,6 +178,7 @@
       courtA: s.onCourtA, courtB: s.onCourtB,
       dotsA: dots(s.onCourtA, max), dotsB: dots(s.onCourtB, max),
       danger: dangerLines(s),
+      raiding: raidingBox(s),
       table: pointsTable(s),
       moments: moments,
     };
@@ -172,7 +187,8 @@
   // The big pop-up over the score: the moments that are NEW in "next" compared with "prev", e.g.
   // "SUPER RAID + ALL OUT! CSE +7". null = nothing to show: the page just opened (prev null), the same state
   // came again (reconnect), an UNDO took a moment away, or a normal raid.
-  var KB_POP = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "TECHNICAL POINT" };
+  var KB_POP = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "TECHNICAL POINT",
+    do_or_die: "DO-OR-DIE SUCCESS", do_or_die_out: "DO-OR-DIE OUT" };
   function momentKey(h) { return [h.kind, h.team, h.half, h.scoreA, h.scoreB].join("|"); }
   function kabaddiPop(prev, next) {
     if (!prev || !next || next.sport !== "kabaddi") return null;

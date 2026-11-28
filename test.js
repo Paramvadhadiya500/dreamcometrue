@@ -37,6 +37,19 @@ s = computeTableTennis(effectivePoints(log));
 assert.strictEqual(s.pointsA, 2);
 assert.strictEqual(s.pointsB, 0);
 assert.strictEqual(effectivePoints([{ type: "undo" }]).length, 0);
+// kabaddi "raid started" is never taken back by UNDO: UNDO takes back the newest other entry
+{
+  const { canUndo } = require("./engine");
+  const A = { type: "point", team: "A" }, RS = { type: "raid_start", data: { team: "B" } }, U = { type: "undo" };
+  assert.deepStrictEqual(effectivePoints([A, RS, U]), [RS], "undo skips the raid start and takes the point");
+  assert.deepStrictEqual(effectivePoints([RS, U]), [RS], "only a raid start: nothing to take back");
+  assert.deepStrictEqual(effectivePoints([A, A, RS, U, U]), [RS]);
+  assert.deepStrictEqual(effectivePoints([A, U, A]), [A], "other sports: unchanged");
+  assert.strictEqual(canUndo([RS]), false);
+  assert.strictEqual(canUndo([A, U]), false);
+  assert.strictEqual(canUndo([A, RS]), true);
+  assert.strictEqual(canUndo([]), false);
+}
 
 // ---------- simple score mode (Lesson 9) ----------
 const simple = getEngine("simple");
@@ -1378,6 +1391,12 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual(hk.rows.map((r) => r.after).reverse(), [
     "CSE 3-0 ECE (H1)", "CSE 3-0 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-2 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)",
     "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (half time)", "CSE 5-1 ECE (H2)"]);
+  // kabaddi raid start: in words, and UNDO skips it (takes back the raid before it)
+  const hk2 = bySeq(hist("kabaddi", [raid("A", 1, false, false), { type: "raid_start", data: { team: "B" } }, { type: "undo" },
+    { type: "raid_start", data: { cancel: true } }], { config: { halfMinutes: 15, knockout: false } }));
+  assert.deepStrictEqual([hk2[2].text, hk2[2].undone], ["Raid started: ECE", false]);
+  assert.deepStrictEqual([hk2[1].undone, hk2[1].undoneBySeq, hk2[3].text], [true, 3, "UNDO (cancels: Raid by CSE: 1 out)"]);
+  assert.strictEqual(hk2[4].text, "Raid cancelled");
 
   // table tennis: a point has no value
   const h5 =hist("table_tennis", [{ type: "point", team: "A" }]);
@@ -1488,6 +1507,7 @@ const { createQueue } = require("./public/queue");
   assert.deepStrictEqual(kabaddiLines(kb1), { current: "Half 1 (15 min)", history: "", banner: "",
     courtA: 7, courtB: 3, dotsA: "●●●●●●●", dotsB: "●●●○○○○",
     danger: ["ECE: 3 on court - SUPER TACKLE on!"],
+    raiding: null,
     table: [["Raid", 3, 0], ["Tackle", 1, 0], ["All out", 0, 0], ["Technical", 0, 0]],
     moments: ["SUPER RAID · CSE +3 (3 out) · H1 · 3-0"] });
   const kbHT = st("kabaddi", [raid("A", 3), H(1)], kbCfg);
@@ -1538,6 +1558,27 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(kabaddiPop(kb0, st("kabaddi", [p("B", 1)], kbCfg)), "TECHNICAL POINT! ECE +1");
   assert.strictEqual(kabaddiPop(kb0, st("kabaddi", [raid("A", 2)], kbCfg)), null, "a normal raid: no pop-up");
   assert.strictEqual(kabaddiPop(kb0, { ...kb0, sport: "basketball" }), null);
+
+  // RAID STARTED: the "raiding now" box with its badges; do-or-die moments, pop-ups, table row, sentence
+  const RS = (team) => ({ type: "raid_start", data: { team } });
+  const emp = (t) => raid(t, 0);
+  assert.strictEqual(kabaddiLines(kb0).raiding, null);
+  assert.deepStrictEqual(kabaddiLines(st("kabaddi", [RS("A")], kbCfg)).raiding, { title: "CSE RAIDING NOW", badges: [] });
+  const kbDodNow = st("kabaddi", [raid("A", 4), emp("B"), emp("A"), emp("B"), RS("B")], kbCfg);   // ECE: do-or-die; CSE has 7
+  assert.deepStrictEqual(kabaddiLines(kbDodNow).raiding, { title: "ECE RAIDING NOW", badges: ["DO-OR-DIE RAID"] });
+  assert.strictEqual(scoreSentence(kbDodNow), "CSE 4, ECE 0. ECE raiding now, do-or-die raid.");
+  const kbSTnow = st("kabaddi", [raid("A", 4), RS("A")], kbCfg);                                  // ECE has 3
+  assert.deepStrictEqual(kabaddiLines(kbSTnow).raiding, { title: "CSE RAIDING NOW", badges: ["SUPER TACKLE CHANCE (ECE 3 on court)"] });
+  const dodEv = [emp("A"), emp("B"), emp("A"), emp("B")];
+  const kbDodOut = st("kabaddi", [...dodEv, emp("A")], kbCfg);
+  assert.strictEqual(kabaddiLines(kbDodOut).moments[0], "DO-OR-DIE OUT · ECE +1 · H1 · 0-1");
+  assert.deepStrictEqual(kabaddiLines(kbDodOut).table,
+    [["Raid", 0, 0], ["Tackle", 0, 0], ["All out", 0, 0], ["Do-or-die out", 0, 1], ["Technical", 0, 0]]);
+  assert.strictEqual(kabaddiPop(st("kabaddi", dodEv, kbCfg), kbDodOut), "DO-OR-DIE OUT! ECE +1");
+  const kbDodWin = st("kabaddi", [...dodEv, raid("A", 2)], kbCfg);
+  assert.strictEqual(kabaddiLines(kbDodWin).moments[0], "DO-OR-DIE SUCCESS · CSE +2 · H1 · 2-0");
+  assert.strictEqual(kabaddiPop(st("kabaddi", dodEv, kbCfg), kbDodWin), "DO-OR-DIE SUCCESS! CSE +2");
+  assert.strictEqual(kabaddiPop(st("kabaddi", dodEv, kbCfg), st("kabaddi", [...dodEv, RS("A")], kbCfg)), null, "a raid start is no moment");
 
   // the toss on the match page
   const { tossLine } = require("./public/js/match-logic");

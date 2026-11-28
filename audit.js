@@ -1,7 +1,7 @@
 // Score history for the admin page: every scoring action of one match, in plain words, with who did it,
 // when the server saved it, whether it was undone, and the score right after it.
 // Pure: no database. admin.js reads the rows and calls buildHistory().
-const { effectivePoints } = require("./engine");
+const { effectivePoints, NOT_UNDOABLE } = require("./engine");
 
 const KIND_NAMES = { bowled: "Bowled", caught: "Caught", lbw: "LBW", stumped: "Stumped", runout: "Run out", hitwicket: "Hit wicket" };
 
@@ -40,6 +40,7 @@ function kabaddiText(e, names) {
     if (d.kind === "over") return "Break over";
   }
   if (e.type === "end_period" && (d.period === 1 || d.period === 2)) return "End Half " + d.period;
+  if (e.type === "raid_start") return d.cancel ? "Raid cancelled" : "Raid started: " + n(d.team);
   return null;                      // the same words as the other sports
 }
 
@@ -96,7 +97,7 @@ function buildHistory(match, events, engine) {
       }
     } else {
       row.text = actionText(e, names, match.sport);
-      counted.push(row);
+      if (!NOT_UNDOABLE.has(e.type)) counted.push(row);     // UNDO never takes back a raid start (same rule as effectivePoints)
     }
 
     prefix.push(e);
