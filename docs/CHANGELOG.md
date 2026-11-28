@@ -9,6 +9,12 @@ Each entry: **What** / **Why** / **Checked** / **Undo**.
 
 ---
 
+## 2026-11-28 - Deployed do-or-die + RAID STARTED on the server (by hand): migration 009
+- **What:** deploy of `3cbc6bf` by the user on the server (backup, `git pull`, `docker compose build`, `migrate.js` for 009_raid_start.sql, `docker compose up -d`).
+- **Checked:** the user reports it is deployed and "works fine". (Claude did not see the server output this time.)
+- **NOT checked:** a full kabaddi match with do-or-die on a real scorer phone during an event.
+- **Undo:** `git checkout 9f4593c` (or revert `3cbc6bf`), `docker compose build`, `docker compose up -d`. Migration 009 can stay. Not during a live kabaddi match (stored raid starts would become undoable with the old code).
+
 ## 2026-11-28 - Do-or-die + RAID STARTED (3cbc6bf) pushed; all 4 CI jobs green
 - **What:** `git push` of `cabe708`, `3cbc6bf` (`9f4593c..3cbc6bf`). NOT deployed yet (the server runs `9f4593c`).
 - **Checked:** GitHub Actions run 46128554321 for `3cbc6bf`: success; `unit`, `integration`, `image` and `e2e` all green (job results read from the GitHub API).
