@@ -32,6 +32,11 @@
     <p id="kbRaidingBadges" class="kb-badges"></p>
   </div>
 
+  <!-- football: PENALTY on the scorer's phone -> "PENALTY TO CSE!" until it is taken (kbPop above is the pop-up for goals too) -->
+  <div id="fbPenalty" class="kb-raiding" hidden>
+    <p id="fbPenaltyTitle" class="kb-raiding-title"></p>
+  </div>
+
   <!-- simple sport, table tennis, volleyball, basketball: names left and right, the big numbers in the middle -->
   <div class="duel" id="duel" hidden>
     <span class="team a" id="nameA"></span>
@@ -60,6 +65,24 @@
     </table>
     <h2 id="kbMomentsTitle" class="kb-title" hidden>Big moments</h2>
     <ol id="kbMoments" class="kb-moments"></ol>
+  </div>
+
+  <!-- football: the half, a banner, the scorers under each team, the shootout, every goal / penalty / card -->
+  <div id="football" hidden>
+    <div class="fb-scorers">
+      <ul id="fbGoalsA" class="fb-goals a" aria-label="Goals team A"></ul>
+      <ul id="fbGoalsB" class="fb-goals b" aria-label="Goals team B"></ul>
+    </div>
+    <p id="fbPeriod" class="current"></p>
+    <p id="fbBanner" class="kb-banner" hidden></p>
+    <div id="fbShootout" class="fb-shootout" hidden>
+      <h2 class="kb-title">Penalty shootout</h2>
+      <p id="fbShootScore" class="fb-shoot-score"></p>
+      <div id="fbShootRows"></div>
+      <p id="fbShootNote" class="small"></p>
+    </div>
+    <h2 id="fbEventsTitle" class="kb-title" hidden>Match events</h2>
+    <ol id="fbEvents" class="kb-moments"></ol>
   </div>
 
   <div id="cricket" hidden>

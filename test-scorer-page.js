@@ -704,10 +704,12 @@ const blockedTest = (async () => {
   assert.ok(shown(w, "fbForm") && !shown(w, "fbTeams") && shown(w, "fbKinds") && !shown(w, "fbColors"), "the goal form");
   assert.deepStrictEqual([text(w, "fbFormTitle"), w.el("fbKind_normal").className, text(w, "fbSummary"), w.el("fbSave").disabled],
     ["GOAL for ECE", "on", "Type the shirt number of the scorer", true]);
-  type(w, "100");
-  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 99");
+  type(w, "1000");
+  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 999");
   type(w, "0");
-  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 99");
+  assert.strictEqual(text(w, "fbSummary"), "Shirt number: 1 to 999");
+  type(w, "999");
+  assert.strictEqual(text(w, "fbSummary"), "Will send: GOAL ECE #999", "3-digit shirt numbers are fine");
   type(w, "7", "<b>");
   assert.strictEqual(text(w, "fbSummary"), "Name: up to 20 letters, numbers, spaces and . ' -");
   type(w, "", "Rahul");

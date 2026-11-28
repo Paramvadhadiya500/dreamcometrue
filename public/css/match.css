@@ -71,6 +71,26 @@ h1 { font-size: 22px; margin: 4px 0 2px; }
 .kb-moments li { padding: 3px 0; }
 .kb-moments li:first-child { font-weight: bold; }
 
+/* football: scorers under each team, the shootout marks, cards in the events list */
+.fb-scorers { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; margin: 6px 0 0; }
+.fb-goals { list-style: none; margin: 0; padding: 0; font-size: 14px; color: var(--text-muted); overflow-wrap: anywhere; }
+.fb-goals.a { text-align: right; }
+.fb-goals.b { text-align: left; }
+.fb-goals li::before { content: "\26BD\FE0E  "; }
+.fb-shoot-score { font-size: 20px; font-weight: 800; margin: 0 0 6px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.fb-shoot-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 8px; margin: 4px 0; text-align: left; }
+.fb-shoot-name { font-weight: bold; overflow-wrap: anywhere; }
+.fb-marks { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.fb-mark { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--text-muted); box-sizing: border-box; opacity: 0.5; }
+.fb-mark.scored { background: var(--done); border-color: var(--done); opacity: 1; }
+.fb-mark.missed { border-color: var(--text); opacity: 1; position: relative; }
+.fb-mark.missed::before, .fb-mark.missed::after { content: ""; position: absolute; left: 6px; top: 1px; width: 2px; height: 12px; background: var(--text); }
+.fb-mark.missed::before { transform: rotate(45deg); }
+.fb-mark.missed::after { transform: rotate(-45deg); }
+.fb-card { display: inline-block; width: 10px; height: 14px; border-radius: 2px; margin-right: 6px; vertical-align: -2px; }
+.fb-card.yellow { background: #f5c400; }
+.fb-card.red { background: #d22; }
+
 .result { font-size: 18px; font-weight: bold; color: var(--result); margin: 14px 0 0; }
 
 /* A number that just changed flashes once: pale background and a small grow, fading back in 1.5 s.

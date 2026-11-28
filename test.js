@@ -1659,6 +1659,76 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(connectionText(true, false, "14:05:12"), "No internet connection. The score below is from 14:05:12.",
     "offline wins, even while the old connection does not know it yet");
   assert.strictEqual(connectionText(true, true, null), "No internet connection.");
+
+  // ---- football: board lines, pop-ups, screen-reader sentence ----
+  const { footballLines, footballPop } = require("./public/js/match-logic");
+  const fbG = { config: { halfMinutes: 15, players: 6, knockout: false } };
+  const fbK = { config: { halfMinutes: 7, players: 5, knockout: true } };
+  const KOF = (n) => ({ type: "period_start", data: { period: n } });
+  const ENDH = (n) => ({ type: "end_period", data: { period: n } });
+  const GL = (team, shirt, kind = "normal", name) => ({ type: "goal", data: { team, kind, shirt, ...(name ? { name } : {}) } });
+  const fbSt = (list, cfg = fbG) => ({ ...st("football", list, cfg), matchId: "m", name: "M" });
+
+  const f0 = fbSt([]);
+  assert.deepStrictEqual(footballLines(f0), { period: "6-a-side, 2 x 15 min", history: "", banner: "Kick-off soon", penalty: "",
+    goalsA: [], goalsB: [], events: [], shootout: null });
+  assert.strictEqual(scoreSentence(f0), "CSE 0, ECE 0. Kick-off soon.");
+  const f1 = fbSt([KOF(1), GL("A", 9, "normal", "Rahul"), GL("B", 7, "free_kick"), GL("A", 4, "own_goal"),
+    { type: "penalty_start", data: { team: "B" } }]);
+  const l1 = footballLines(f1);
+  assert.deepStrictEqual([l1.period, l1.banner, l1.penalty, l1.goalsA, l1.goalsB],
+    ["1st half (6-a-side, 2 x 15 min)", "", "PENALTY TO ECE!", ["#9 Rahul", "#4 (og)"], ["#7 (fk)"]]);
+  assert.deepStrictEqual(l1.events.map((e) => e.text), ["OWN GOAL · CSE #4 · 1st half · 2-1", "GOAL · ECE #7 (free kick) · 1st half · 1-1",
+    "GOAL · CSE #9 Rahul · 1st half · 1-0"], "newest first");
+  assert.strictEqual(scoreSentence(f1), "CSE 2, ECE 1. Penalty to ECE.");
+  // penalty saved, a red card, half time
+  const f2 = fbSt([KOF(1), GL("A", 9), { type: "penalty", data: { team: "B", outcome: "saved" } },
+    { type: "card", data: { team: "B", color: "red", shirt: 4, name: "Amit" } }, ENDH(1)]);
+  const l2 = footballLines(f2);
+  assert.deepStrictEqual([l2.period, l2.banner, l2.history], ["2nd half (6-a-side, 2 x 15 min)", "HALF TIME", "HT 1-0"]);
+  assert.deepStrictEqual(l2.events, [{ text: "Red card · ECE #4 Amit · 1st half", card: "red" }, { text: "Penalty saved · ECE · 1st half", card: null },
+    { text: "GOAL · CSE #9 · 1st half · 1-0", card: null }]);
+  // full time level in a knockout, extra time, AET history
+  const lvl = [KOF(1), GL("A", 9), ENDH(1), KOF(2), GL("B", 3), ENDH(2)];
+  assert.deepStrictEqual([footballLines(fbSt(lvl, fbK)).banner, footballLines(fbSt(lvl, fbK)).period],
+    ["FULL TIME · level: extra time or penalties next", null]);
+  const lvlET = [...lvl, { type: "extra_time" }, ENDH(3), KOF(4), ENDH(4)];
+  assert.deepStrictEqual([footballLines(fbSt(lvlET, fbK)).banner, footballLines(fbSt(lvlET, fbK)).history],
+    ["Level after extra time: penalty shootout next", "HT 1-0 · FT 1-1 · ET HT 1-1 · AET 1-1"]);
+  assert.strictEqual(footballLines(fbSt([...lvl, { type: "extra_time" }], fbK)).period, "Extra time 1st half");
+  // the shootout
+  const so = [...lvl, { type: "shootout_start", data: { kicks: 3, first: "B" } }, { type: "kick", data: { team: "B", outcome: "scored" } },
+    { type: "kick", data: { team: "A", outcome: "saved" } }];
+  const lso = footballLines(fbSt(so, fbK));
+  assert.deepStrictEqual(lso.shootout, { score: "CSE 0 - 1 ECE", note: "3 kicks each · Next: ECE",
+    rows: [{ team: "CSE", marks: ["saved", "todo", "todo"], label: "CSE: 0 scored from 1" }, { team: "ECE", marks: ["scored", "todo", "todo"], label: "ECE: 1 scored from 1" }] });
+  assert.strictEqual(lso.banner, "PENALTY SHOOTOUT");
+  assert.strictEqual(scoreSentence(fbSt(so, fbK)), "CSE 1, ECE 1. Penalty shootout: CSE 0, ECE 1.");
+  const done = [...so, { type: "kick", data: { team: "B", outcome: "scored" } }, { type: "kick", data: { team: "A", outcome: "missed" } }];
+  const fDone = fbSt(done, fbK);
+  assert.deepStrictEqual([footballLines(fDone).banner, footballLines(fDone).shootout.note], ["", ""]);
+  assert.strictEqual(scoreSentence(fDone), "Match finished. Team B won 2-0 on penalties (1-1). CSE 1, ECE 1.");
+
+  // pop-ups: only for a NEW moment; never when the page just opened, for the same state again, or after UNDO / remove
+  const pk = [KOF(1)];
+  const pops = (before, after, cfg) => footballPop(fbSt(before, cfg), fbSt(after, cfg));
+  assert.strictEqual(footballPop(null, f1), null, "the page just opened");
+  assert.strictEqual(pops(pk, [...pk, GL("A", 9, "normal", "Rahul")]), "GOAL! CSE #9 Rahul · 1-0");
+  assert.strictEqual(pops(pk, [...pk, GL("B", 4, "own_goal")]), "OWN GOAL! ECE #4 · 0-1");
+  assert.strictEqual(pops(pk, [...pk, GL("A", 7, "free_kick")]), "FREE-KICK GOAL! CSE #7 · 1-0");
+  assert.strictEqual(pops(pk, [...pk, { type: "penalty", data: { team: "A", outcome: "scored", shirt: 10 } }]), "PENALTY GOAL! CSE #10 · 1-0");
+  assert.strictEqual(pops(pk, [...pk, { type: "penalty", data: { team: "B", outcome: "saved" } }]), "PENALTY SAVED! ECE did not score");
+  assert.strictEqual(pops(pk, [...pk, { type: "penalty", data: { team: "B", outcome: "missed" } }]), "PENALTY MISSED! ECE");
+  assert.strictEqual(pops(pk, [...pk, { type: "card", data: { team: "B", color: "red", shirt: 4 } }]), "RED CARD! ECE #4");
+  assert.strictEqual(pops(pk, [...pk, { type: "card", data: { team: "A", color: "yellow", shirt: 5 } }]), "Yellow card: CSE #5");
+  assert.strictEqual(pops([...pk, GL("A", 9)], [...pk, GL("A", 9)]), null, "the same state again (reconnect)");
+  assert.strictEqual(pops([...pk, GL("A", 9)], [...pk, GL("A", 9), { type: "undo" }]), null, "UNDO: nothing new");
+  assert.strictEqual(pops([...pk, GL("A", 9), GL("B", 3)], [...pk, GL("A", 9), GL("B", 3), { type: "remove", data: { seq: 3 } }]), null, "a goal removed");
+  assert.strictEqual(pops(pk, [...pk, { type: "penalty_start", data: { team: "A" } }]), null, "a penalty start is the blinking box, not a pop-up");
+  assert.strictEqual(pops(so, [...so, { type: "kick", data: { team: "B", outcome: "scored" } }], fbK), "ECE SCORES! (penalty 2)");
+  assert.strictEqual(pops(so.slice(0, -1), so, fbK), "SAVED! CSE (penalty 1)");
+  assert.strictEqual(pops(done.slice(0, -1), done, fbK), "MISSED! CSE (penalty 2) · ECE WIN ON PENALTIES!");
+  assert.strictEqual(footballPop(fbSt(pk), { ...fbSt([...pk, GL("A", 9)]), sport: "kabaddi" }), null, "another sport: nothing");
 }
 
 // ---------- student home page: "Updated ... ago" ----------

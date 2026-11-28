@@ -1,6 +1,6 @@
 # PROJECT CONTEXT: College Live Score
 
-Last updated: 2026-10-16, after Lesson 13 (load test and capacity). Details: LESSON_12.md (HTTPS, security) and LESSON_13.md (capacity, load test).
+Last updated: 2026-11-28 (football added). Before: Lesson 13 (load test and capacity). Details: LESSON_12.md (HTTPS, security) and LESSON_13.md (capacity, load test).
 Keep the "Status" section current. Never put passwords, tokens or the contents of .env in this file.
 
 ## 1. What this is
@@ -37,15 +37,15 @@ admin.js             admin API router (/api/admin/*): matches, scorers
 standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
 engine.js            table tennis rules + effectivePoints() (undo handling)
-engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball | kabaddi
-engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js, kabaddi.js   (each also has result(state) and headline(state, names))
+engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball | kabaddi | football
+engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js, kabaddi.js, football.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql, 008_kabaddi.sql, 009_raid_start.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql, 008_kabaddi.sql, 009_raid_start.sql, 010_football.sql
 categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
-add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball|basketball|kabaddi [--overs --players --first --freehit --bestof --scorer]
+add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball|basketball|kabaddi|football [--overs --players --first --freehit --bestof --scorer]
 test.js              unit tests (all rules, a 400-game random cricket test, a 400-game random volleyball test)
 loadtest.js          load test (viewers); scorer login from SCORER_USER / SCORER_PASS
 loadtest-real.js     realistic traffic simulator (students arrive, browse, watch live, switch match, drop and reconnect; scorers; probes); see LESSON_13.md
@@ -145,6 +145,27 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   DO-OR-DIE RAID / SUPER TACKLE CHANCE badges. Never scored, never taken back by UNDO.
   NOT supported: clock, player names, cards (use the court fix), substitutions, tie-break raids (only the winner), the 30-second raid limit.
   Not in the AKFI text (user CONFIRMED): super tackle 2 points; bonus kept when the raider is caught later; a technical point brings nobody back.
+- football (IFAB Laws checked + the user's choices; Boys and Girls only; settings in matches.config: halfMinutes, players, knockout,
+  always set by admin.js: Boys 6-a-side 2 x 15 min, Girls 5-a-side 2 x 7 min, every stage the same (display only: no clock, no match minute);
+  knockout = stage is not group; group <-> knockout cannot change after scoring starts). Team inside data:
+  `period_start{data:{period 1..4}}` (KICK-OFF of each half; goals / penalties / END HALF need it), `goal{data:{team (gets it), kind normal|free_kick|own_goal,
+  shirt 1-999, name? (max 20)}}`, `penalty_start{data:{team}|{cancel:true}}` (state.penaltyNow, "PENALTY TO CSE!"; a normal undoable entry),
+  `penalty{data:{team, outcome scored|saved|missed, shirt? (needed if scored), name?}}` (scored = goal kind penalty), `card{data:{team, color yellow|red,
+  shirt, name?}}` (shown only, nothing automatic: no 2nd-yellow rule, no player count), `end_period{data:{period}}` (refused if already ended),
+  `extra_time` (level knockout at full time; kicks off at once = period 3), `shootout_start{data:{kicks 3|5, first A|B}}`, `kick{data:{team, outcome}}`
+  (must be the next kicker; ends by itself: early when one side cannot catch up, then sudden death), `remove{data:{seq}}` (a wrong goal / penalty of the
+  same phase (normal time or extra time), or any card; never at a level full time or in the shootout; state.removable), `finish{data:{winner}}` (walkover), `undo`.
+  Level after half 2: group = draw; knockout = needsDecision (scorer: EXTRA TIME or SHOOTOUT); level after extra time = shootout only.
+  State: scoreA/B, currentA/B, period, periodName, isExtraTime, kickedOff, playing, halves, goals (seq, team, kind, shirt, name, period, score after),
+  cards, penalties (saved/missed), highlights (newest 10, by seq: goal, penalty_saved, penalty_missed, yellow_card, red_card, kick), penaltyNow, breakNow
+  (half_time | extra_time_half_time | full_time), needsDecision, canExtraTime, shootout {kicks, first, A, B, scoreA, scoreB, next, suddenDeath}, removable,
+  ended (normal|draw|extra_time|shootout|walkover), resultText ("Team B won 4-3 on penalties (2-2)"). Points table: forA/forB = goals (shootout not counted),
+  win 2 / draw 1 / loss 0 like every sport (user decides 3/1/0 later).
+  Scorer page: KICK-OFF, GOAL / PENALTY / CARD per team -> small form (shirt + name) -> SAVE; END HALF asks; EXTRA TIME / SHOOTOUT (3 or 5, who first);
+  kick buttons lock 1.5 s (a double tap must not become the other team's kick); "Fix a mistake" = remove list. queue.js pending() returns data copies.
+  Match page: pop-up (MatchLogic.footballPop, by seq: GOAL! / OWN GOAL! / PENALTY SAVED! / RED CARD! / shootout kicks / "... WIN ON PENALTIES!"),
+  blinking PENALTY box, scorers under each team, HT/FT/AET line, shootout marks, "Match events" newest first.
+  NOT supported: clock / match minute, team lists, substitutions, automatic 2nd yellow = red, players on field, corners / shots counters, 3/1/0 points.
 - State of every sport also has: sport, matchId, name, version, status ("live"|"finished"), winner.
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
@@ -152,7 +173,8 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 - matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
-  type in: point, undo, finish, ball, end_innings, toss, end_period, raid, court, break, raid_start
+  type in: point, undo, finish, ball, end_innings, toss, end_period, raid, court, break, raid_start,
+           goal, card, penalty_start, penalty, period_start, extra_time, shootout_start, kick, remove (football, 010)
 - schema_migrations(name PK, applied_at)
 Rules: NEVER edit a migration that was already applied. Add a new numbered file (004_...sql). Write migrations so they can run twice (IF NOT EXISTS).
 
@@ -202,12 +224,12 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 
 ## 11. Status
 Done: Lessons 1-13: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
-AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages), basketball engine (quarters, overtime, admin form, scorer and match pages), kabaddi engine (raids, all out, super tackle, breaks, admin form, scorer and match pages),
+AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages), basketball engine (quarters, overtime, admin form, scorer and match pages), kabaddi engine (raids, all out, super tackle, breaks, admin form, scorer and match pages), football engine (goals, penalties, cards, extra time, shootout; admin form, scorer and match pages),
 admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page,
 HTTPS settings (IP address or domain certificate through Caddy), login protection, request limits, weak-password finder, automatic backups, security check script.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).
 To do next: find out the server size (./scripts/snapshot.sh) and run the staged real load test from LESSON_13.md on the real server (500, 2000, 5000, 10000 students) and decide the event-day server size;
-switch HTTPS on and run ./scripts/security-check.sh until it has no FAIL; football engine; full mock event with real scorers on real phones (plan in LESSON_12.md);
+switch HTTPS on and run ./scripts/security-check.sh until it has no FAIL; deploy football (migration 010); full mock event with real scorers on real phones (plan in LESSON_12.md);
 rehearse a restore (safe drill in LESSON_12.md); load test again through HTTPS.
 Known gaps: CAPACITY IS NOT PROVEN ON THE REAL SERVER (only measured on a test machine and calculated): see section 12; HTTPS on the bare IP: the certificate was issued (13 Oct 2026) but the first browser test failed until `default_sni` was added to the Caddyfile; confirm with ./scripts/security-check.sh (no FAIL);
 login limits are per server and per address (many users behind one college address share the address limit); no CSP header; HSTS is only 1 day;

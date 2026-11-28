@@ -80,9 +80,9 @@ module.exports = function testFootball() {
   // goal checks
   assert.strictEqual(check([KO(1)], G("C")), "bad team");
   assert.strictEqual(check([KO(1)], { type: "goal", data: { team: "A", kind: "header", shirt: 9 } }), "choose the kind of goal");
-  assert.strictEqual(check([KO(1)], G("A", 0)), "shirt number must be 1 to 99");
-  assert.strictEqual(check([KO(1)], G("A", 100)), "shirt number must be 1 to 99");
-  assert.strictEqual(check([KO(1)], G("A", 9.5)), "shirt number must be 1 to 99");
+  assert.strictEqual(check([KO(1)], G("A", 0)), "shirt number must be 1 to 999");
+  assert.strictEqual(check([KO(1)], G("A", 1000)), "shirt number must be 1 to 999");
+  assert.strictEqual(check([KO(1)], G("A", 9.5)), "shirt number must be 1 to 999");
   assert.strictEqual(check([KO(1)], G("A", 9, "normal", "<script>")), "name: up to 20 letters, numbers, spaces and . ' -");
   assert.strictEqual(check([KO(1)], G("A", 9, "normal", "x".repeat(21))), "name: up to 20 letters, numbers, spaces and . ' -");
   assert.strictEqual(check([KO(1)], G("A", 9, "normal", "D'Souza Jr. Ravi-K")), null);
@@ -213,9 +213,9 @@ module.exports = function testFootball() {
   s = run([KO(1), PS("B"), undo]);
   assert.strictEqual(s.penaltyNow, null, "UNDO takes a penalty start back (it is a normal entry)");
   assert.strictEqual(check([KO(1)], PCANCEL), "no penalty is waiting");
-  assert.strictEqual(check([KO(1)], PEN("A", "scored")), "shirt number must be 1 to 99", "a scored penalty needs the shirt");
+  assert.strictEqual(check([KO(1)], PEN("A", "scored")), "shirt number must be 1 to 999", "a scored penalty needs the shirt");
   assert.strictEqual(check([KO(1)], PEN("A", "saved")), null, "a saved penalty does not");
-  assert.strictEqual(check([KO(1)], PEN("A", "saved", 200)), "shirt number must be 1 to 99");
+  assert.strictEqual(check([KO(1)], PEN("A", "saved", 1000)), "shirt number must be 1 to 999");
   assert.strictEqual(check([KO(1)], PEN("A", "wide")), "choose scored, saved or missed");
   assert.strictEqual(check([], PS("A")), "tap KICK-OFF first");
 
@@ -229,7 +229,7 @@ module.exports = function testFootball() {
   assert.deepStrictEqual(score(s), [0, 0]);
   assert.deepStrictEqual(s.highlights.map((h) => h.kind), ["red_card", "yellow_card", "yellow_card"]);
   assert.strictEqual(check([KO(1)], CARD("A", "green")), "choose yellow or red");
-  assert.strictEqual(check([KO(1)], CARD("A", "red", 0)), "shirt number must be 1 to 99");
+  assert.strictEqual(check([KO(1)], CARD("A", "red", 0)), "shirt number must be 1 to 999");
   assert.strictEqual(check([], CARD("A", "red")), null, "a card before the kick-off is allowed (it happens)");
   assert.strictEqual(check([KO(1), END(1)], CARD("A", "red")), null, "and at half time");
 

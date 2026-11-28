@@ -29,6 +29,11 @@
       var r = s.raidingNow;
       var raiding = r ? teamName(s, r.team) + " raiding now" + (r.doOrDie ? ", do-or-die raid" : "") : "";
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + (raiding || banner || s.halfName) + ".");
+    } else if (s.sport === "football") {
+      var pen = s.penaltyNow ? "Penalty to " + teamName(s, s.penaltyNow.team) : "";
+      var so = s.shootout ? "Penalty shootout: " + A + " " + s.shootout.scoreA + ", " + B + " " + s.shootout.scoreB : "";
+      text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." +
+        (s.status === "finished" ? "" : " " + (so || pen || footballBanner(s) || FB_PERIODS[s.period - 1]) + ".");
     } else {
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + ".";
     }
@@ -204,8 +209,105 @@
     return fresh.map(function (h) { return KB_POP[h.kind] || h.kind; }).join(" + ") + "! " + teamName(next, last.team) + (points ? " +" + points : "");
   }
 
+  // ---------- football ----------
+  var FB_PERIODS = ["1st half", "2nd half", "Extra time 1st half", "Extra time 2nd half"];
+  var FB_SHORT = { normal: "", free_kick: " (fk)", own_goal: " (og)", penalty: " (pen)" };
+  var FB_LONG = { normal: "", free_kick: " (free kick)", own_goal: " (own goal)", penalty: " (penalty)" };
+  function fbWho(d) { return d && d.shirt ? "#" + d.shirt + (d.name ? " " + d.name : "") : ""; }
+
+  // the banner over the score ("" = none)
+  function footballBanner(s) {
+    if (s.status === "finished") return "";
+    if (s.shootout) return "PENALTY SHOOTOUT";
+    if (s.needsDecision) return s.canExtraTime ? "FULL TIME · level: extra time or penalties next" : "Level after extra time: penalty shootout next";
+    var b = s.breakNow;
+    if (b && b.kind === "half_time") return "HALF TIME";
+    if (b && b.kind === "extra_time_half_time") return "EXTRA TIME · HALF TIME";
+    if (!s.kickedOff) return "Kick-off soon";
+    return "";
+  }
+
+  // Football board: the half now, the score at each break (HT 0-1 · FT 1-1 · AET 2-1), the banner, the live penalty,
+  // the scorers under each team, every goal / penalty / card newest first, and the shootout.
+  function footballLines(s) {
+    var finished = s.status === "finished";
+    var format = s.players + "-a-side, 2 x " + s.halfMinutes + " min";
+    var period = null;
+    if (!finished && !s.shootout && !s.needsDecision) {
+      period = s.kickedOff ? FB_PERIODS[s.period - 1] + (s.isExtraTime ? "" : " (" + format + ")") : format;
+    }
+    var labels = ["HT", "FT", "ET HT", "AET"], a = 0, b = 0;
+    var history = (s.halves || []).map(function (h, i) { a += h[0]; b += h[1]; return labels[i] + " " + a + "-" + b; }).join(" · ");
+    var goals = { A: [], B: [] };
+    (s.goals || []).forEach(function (g) { goals[g.team].push((fbWho(g) || "Goal") + (FB_SHORT[g.kind] || "")); });
+
+    var events = [];
+    (s.goals || []).forEach(function (g) {
+      events.push({ seq: g.seq, text: (g.kind === "own_goal" ? "OWN GOAL" : g.kind === "penalty" ? "PENALTY GOAL" : "GOAL") + " · " + teamName(s, g.team) +
+        (fbWho(g) ? " " + fbWho(g) : "") + (g.kind === "free_kick" ? " (free kick)" : "") + " · " + FB_PERIODS[g.period - 1] + " · " + g.scoreA + "-" + g.scoreB });
+    });
+    (s.penalties || []).forEach(function (p) {
+      events.push({ seq: p.seq, text: "Penalty " + p.outcome + " · " + teamName(s, p.team) + (fbWho(p) ? " " + fbWho(p) : "") + " · " + FB_PERIODS[p.period - 1] });
+    });
+    (s.cards || []).forEach(function (c) {
+      events.push({ seq: c.seq, text: (c.color === "red" ? "Red card" : "Yellow card") + " · " + teamName(s, c.team) + " " + fbWho(c) + " · " + FB_PERIODS[c.period - 1], card: c.color });
+    });
+    events.sort(function (x, y) { return y.seq - x.seq; });
+
+    var shoot = null;
+    var so = s.shootout;
+    if (so) {
+      var row = function (t) {
+        var list = so[t].slice();
+        while (list.length < so.kicks) list.push("todo");
+        return { team: teamName(s, t), marks: list, label: teamName(s, t) + ": " + so[t === "A" ? "scoreA" : "scoreB"] + " scored from " + so[t].length };
+      };
+      shoot = {
+        score: teamName(s, "A") + " " + so.scoreA + " - " + so.scoreB + " " + teamName(s, "B"),
+        rows: [row("A"), row("B")],
+        note: finished ? (so.suddenDeath ? "Decided in sudden death" : "")
+          : (so.suddenDeath ? "SUDDEN DEATH · " : so.kicks + " kicks each · ") + "Next: " + teamName(s, so.next),
+      };
+    }
+    return {
+      period: period,
+      history: history,
+      banner: footballBanner(s),
+      penalty: !finished && s.penaltyNow ? "PENALTY TO " + teamName(s, s.penaltyNow.team).toUpperCase() + "!" : "",
+      goalsA: goals.A, goalsB: goals.B,
+      events: events.slice(0, 20).map(function (e) { return { text: e.text, card: e.card || null }; }),
+      shootout: shoot,
+    };
+  }
+
+  // The big pop-up for the NEWEST moment that is new in "next" (each moment has the seq of its entry, so a resent
+  // state, an UNDO or a removed goal never pops). null when the page just opened (prev null) or nothing is new.
+  function footballPop(prev, next) {
+    if (!prev || !next || next.sport !== "football") return null;
+    var seen = {};
+    (prev.highlights || []).forEach(function (h) { seen[h.seq] = true; });
+    var h = (next.highlights || [])[0];
+    if (!h || seen[h.seq]) return null;
+    var t = teamName(next, h.team), who = fbWho(h) ? " " + fbWho(h) : "", score = " · " + h.scoreA + "-" + h.scoreB;
+    if (h.kind === "goal") {
+      var head = h.goalKind === "own_goal" ? "OWN GOAL! " : h.goalKind === "penalty" ? "PENALTY GOAL! " : h.goalKind === "free_kick" ? "FREE-KICK GOAL! " : "GOAL! ";
+      return head + t + who + score;
+    }
+    if (h.kind === "penalty_saved") return "PENALTY SAVED! " + t + " did not score";
+    if (h.kind === "penalty_missed") return "PENALTY MISSED! " + t;
+    if (h.kind === "red_card") return "RED CARD! " + t + who;
+    if (h.kind === "yellow_card") return "Yellow card: " + t + who;
+    if (h.kind === "kick") {
+      var line = h.outcome === "scored" ? t + " SCORES! (penalty " + h.kickNo + ")" : (h.outcome === "saved" ? "SAVED! " : "MISSED! ") + t + " (penalty " + h.kickNo + ")";
+      if (next.status === "finished" && next.ended === "shootout") line += " · " + teamName(next, next.winner).toUpperCase() + " WIN ON PENALTIES!";
+      return line;
+    }
+    return null;
+  }
+
   var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText, tossLine: tossLine,
-    basketballLines: basketballLines, kabaddiLines: kabaddiLines, kabaddiPop: kabaddiPop };
+    basketballLines: basketballLines, kabaddiLines: kabaddiLines, kabaddiPop: kabaddiPop,
+    footballLines: footballLines, footballPop: footballPop };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MatchLogic = api;
 })(this);

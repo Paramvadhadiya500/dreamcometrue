@@ -8,7 +8,7 @@
 // The server keeps "team" only for point events, so the team is inside data. Every event has its seq.
 //   period_start  data = { period: 1..4 }: KICK-OFF of half 1, 2 (and extra time half 2 = period 4).
 //                 Goals, penalties and END HALF need a half that has kicked off.
-//   goal          data = { team (gets the goal), kind: normal|free_kick|own_goal, shirt: 1-99, name? }
+//   goal          data = { team (gets the goal), kind: normal|free_kick|own_goal, shirt: 1-999, name? }
 //                 own goal: shirt/name of the player who put it in (from the OTHER team).
 //   penalty_start data = { team } | { cancel: true }: "PENALTY TO CSE!" on the match page until the penalty is entered.
 //   penalty       data = { team (took it), outcome: scored|saved|missed, shirt?, name? } (shirt needed when scored)
@@ -32,7 +32,7 @@ const HALVES = 2;                     // normal time
 const ET_HALVES = 2;                  // extra time
 const HIGHLIGHTS = 10;
 const NAME_MAX = 20;
-const SHIRT_MAX = 99;
+const SHIRT_MAX = 999;                 // shirt numbers 1-999 (user, 2026-11-28)
 const DEFAULT_CONFIG = { halfMinutes: 15, players: 6, knockout: false };
 const KNOCKOUT_STAGES = ["quarter_final", "semi_final", "final", "knockout"];
 const GOAL_KINDS = ["normal", "free_kick", "own_goal"];

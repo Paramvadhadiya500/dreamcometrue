@@ -3,7 +3,9 @@
 //  - KICK-OFF -> GOAL form (shirt number + name) -> score; PENALTY shows at once, then saved; a red card;
 //  - "Fix a mistake" removes a wrong goal; END 1st HALF asks first, and a second END (another scorer) is refused;
 //  - a level semi final: PENALTY SHOOTOUT (3 kicks), kick by kick, a double tap does not become the other team's kick,
-//    the shootout ends by itself with the winner.
+//    the shootout ends by itself with the winner;
+//  - a STUDENT (second 360 px phone) sees it live: goal pop-up, PENALTY TO ..., scorers under each team, red card,
+//    HALF TIME, the shootout marks, "... WIN ON PENALTIES!".
 const { test, expect } = require("@playwright/test");
 const { BASE_URL, RUN, SCORER, PASSWORD, openDb, scorerSocket } = require("./helpers");
 
@@ -12,7 +14,7 @@ test.use({ viewport: { width: 360, height: 740 } });
 const A = "Computer Science Engineering";
 const B = "Mechanical Engineering Department";
 
-test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, END HALF once, shootout", async ({ page }) => {
+test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, END HALF once, shootout", async ({ page, browser }) => {
   const pool = openDb();
   const id = "e2e-fb-" + RUN;
   try {
@@ -50,8 +52,17 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
 
     // KICK-OFF: then GOAL / PENALTY / CARD for both teams and END 1st HALF
     await fits(["fbKickoff", "fbCardA", "fbCardB", "fbFinA", "fbFinB"]);
+    // the student opens the match page before the kick-off
+    const student = await browser.newPage({ viewport: { width: 360, height: 740 } });
+    await student.goto("/match.html?id=" + id);
+    await expect(student.locator("#football")).toBeVisible();
+    await expect(student.locator("#fbBanner")).toHaveText("Kick-off soon");
+    await expect(student.locator("#fbPeriod")).toHaveText("5-a-side, 2 x 7 min");
+
     await page.locator("#fbKickoff").click();
     await expect(page.locator("#fbEnd")).toHaveText("END 1ST HALF");
+    await expect(student.locator("#fbBanner")).toBeHidden();
+    await expect(student.locator("#fbPeriod")).toHaveText("1st half (5-a-side, 2 x 7 min)");
     await fits(["fbGoalA", "fbPenA", "fbCardA", "fbGoalB", "fbPenB", "fbCardB", "fbEnd", "fbFixBtn"]);
 
     // a goal: GOAL under B, free kick, shirt 7 + name
@@ -67,6 +78,11 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     await expect(page.locator("#fbB")).toHaveText("1");
     await expect(page.locator("#fbGoals")).toHaveText("Last goals: " + B + " #7 Ravi (free kick)");
     await expect(page.locator("#fbForm")).toBeHidden();
+    // the student: a big pop-up, the score, the scorer under the team
+    await expect(student.locator("#kbPop")).toHaveText("FREE-KICK GOAL! " + B + " #7 Ravi · 0-1");
+    await expect(student.locator("#sB")).toHaveText("1");
+    await expect(student.locator("#fbGoalsB li")).toHaveText(["#7 Ravi (fk)"]);
+    await expect(student.locator("#fbEvents li")).toHaveText(["GOAL · " + B + " #7 Ravi (free kick) · 1st half · 0-1"]);
 
     // a second goal for A (shirt 9), to remove later
     await page.locator("#fbGoalA").click();
@@ -77,11 +93,14 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     // PENALTY to A: stored at once (students see it), then SAVED
     await page.locator("#fbPenA").click();
     await expect(page.locator("#fbPenNow")).toHaveText("PENALTY TO " + A.toUpperCase() + " (students see it)");
+    await expect(student.locator("#fbPenaltyTitle")).toHaveText("PENALTY TO " + A.toUpperCase() + "!");
     await fits(["fbOut_scored", "fbOut_saved", "fbOut_missed", "fbSave", "fbFormCancel"]);
     await page.locator("#fbOut_saved").click();
     await page.locator("#fbSave").click();
     await expect(page.locator("#fbPenNow")).toBeHidden();
     await expect(page.locator("#fbA")).toHaveText("1");
+    await expect(student.locator("#fbPenalty")).toBeHidden();
+    await expect(student.locator("#kbPop")).toHaveText("PENALTY SAVED! " + A + " did not score");
 
     // a red card for B #4
     await page.locator("#fbCardB").click();
@@ -91,6 +110,9 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     await expect(page.locator("#fbSummary")).toHaveText("Will send: Red card " + B + " #4");
     await page.locator("#fbSave").click();
     await expect(page.locator("#fbForm")).toBeHidden();
+    await expect(student.locator("#kbPop")).toHaveText("RED CARD! " + B + " #4");
+    await expect(student.locator("#fbEvents li").first()).toHaveText("Red card · " + B + " #4 · 1st half");
+    await expect(student.locator("#fbEvents li .fb-card.red")).toHaveCount(1);
 
     // Fix a mistake: remove A's goal (the list comes from the server)
     await page.locator("#fbFixBtn").click();
@@ -99,6 +121,8 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     await removeGoal.click();
     expect(dialogs.at(-1)).toBe("REMOVE: GOAL " + A + " #9 (1st half, 1-1)? Use this only for a wrong entry. You can still press UNDO afterwards.");
     await expect(page.locator("#fbA")).toHaveText("0");
+    await expect(student.locator("#sA")).toHaveText("0");
+    await expect(student.locator("#fbGoalsA li"), "the removed goal is gone for the students too").toHaveCount(0);
 
     const stored = await pool.query("SELECT type, data FROM events WHERE match_id = $1 ORDER BY seq", [id]);
     expect(stored.rows.map((r) => r.type)).toEqual(["period_start", "goal", "goal", "penalty_start", "penalty", "card", "remove"]);
@@ -109,6 +133,8 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     expect(dialogs.at(-1)).toBe("End the 1st half? Half time starts. You can still press UNDO afterwards.");
     await expect(page.locator("#fbBreakNow")).toHaveText("HALF TIME");
     await expect(page.locator("#fbKickoff")).toHaveText("KICK-OFF 2nd half");
+    await expect(student.locator("#fbBanner")).toHaveText("HALF TIME");
+    await expect(student.locator("#history")).toHaveText("HT 0-1");
     const socket = await scorerSocket(BASE_URL);
     try {
       const ack = await socket.timeout(10000).emitWithAck("score:action",
@@ -129,6 +155,7 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
     await expect(page.locator("#fbDecide")).toBeVisible();
     await expect(page.locator("#fbBreakNow")).toHaveText("FULL TIME: LEVEL");
     await expect(page.locator("#fbFirstA")).toHaveText(A);
+    await expect(student.locator("#fbBanner")).toHaveText("FULL TIME · level: extra time or penalties next");
     await fits(["fbEtBtn", "fbKicks3", "fbKicks5", "fbFirstA", "fbFirstB", "fbShootBtn"]);
 
     // PENALTY SHOOTOUT: 3 kicks, B first
@@ -156,6 +183,15 @@ test("football scorer on a 360 px phone: kick-off, goal, penalty, card, remove, 
       await page.locator("#fbKick_" + outcome).click();
     }
     await expect(page.locator("#status")).toHaveText("FINISHED. " + B + " won 2-0 on penalties (1-1)");
+    // the student: the last kick pops up with the winner, the marks, the result
+    await expect(student.locator("#kbPop")).toHaveText("MISSED! " + A + " (penalty 2) · " + B.toUpperCase() + " WIN ON PENALTIES!");
+    await expect(student.locator("#fbShootScore")).toHaveText(A + " 0 - 2 " + B);
+    await expect(student.locator("#fbShootRows .fb-marks").nth(0)).toHaveAttribute("aria-label", A + ": 0 scored from 2");
+    await expect(student.locator("#fbShootRows .fb-mark.scored")).toHaveCount(2);
+    await expect(student.locator("#fbShootRows .fb-mark.missed")).toHaveCount(2);
+    await expect(student.locator("#result")).toHaveText(B + " won 2-0 on penalties (1-1)");
+    expect(await student.evaluate(() => document.documentElement.scrollWidth), "match page: no sideways scrolling").toBeLessThanOrEqual(360);
+    await student.close();
     await expect(page.locator("#fbControls")).toBeHidden();
     kicks = await pool.query("SELECT data FROM events WHERE match_id = $1 AND type = 'kick' ORDER BY seq", [id]);
     expect(kicks.rows.length).toBe(4);

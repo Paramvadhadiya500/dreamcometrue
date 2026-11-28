@@ -130,12 +130,16 @@ socket.on("score:update", (s) => {
   const isCR = s.sport === "cricket";
   const isBB = s.sport === "basketball";
   const isKB = s.sport === "kabaddi";
+  const isFB = s.sport === "football";
   $("duel").hidden = isCR;
   $("current").hidden = !(isTT || isVB || (isBB && !finished) || (isKB && !finished && !s.needsTiebreak));
-  $("history").hidden = !(isTT || isVB || isBB || isKB);
+  $("history").hidden = !(isTT || isVB || isBB || isKB || isFB);
   $("cricket").hidden = !isCR;
   $("kabaddi").hidden = !isKB;
-  if (!isKB) { $("kbPop").hidden = true; $("kbRaiding").hidden = true; }
+  $("football").hidden = !isFB;
+  if (!isKB && !isFB) $("kbPop").hidden = true;          // the pop-up box is shared by kabaddi and football
+  if (!isKB) $("kbRaiding").hidden = true;
+  if (!isFB) $("fbPenalty").hidden = true;
 
   if (isCR) {
     showCricket(s);
@@ -143,6 +147,8 @@ socket.on("score:update", (s) => {
     showBasketball(s);
   } else if (isKB) {
     showKabaddi(s);
+  } else if (isFB) {
+    showFootball(s);
   } else {
     showDuel(s, isTT, isVB);
   }
@@ -281,6 +287,84 @@ function showKabaddi(s) {
     }
     body.appendChild(tr);
   }
+}
+
+// football: total goals big, the scorers under each team, the half, a banner, "PENALTY TO CSE!" while a penalty
+// waits, the shootout kick by kick, every goal / penalty / card (newest first), and a big pop-up for a NEW moment
+let lastFootball = null;                 // the state shown before, to find moments that are NEW
+function fillList(box, items) {
+  box.textContent = "";
+  for (const t of items) {
+    const li = document.createElement("li");
+    li.textContent = t;                  // text only: names typed by the scorer can never become HTML
+    box.appendChild(li);
+  }
+}
+
+function showFootball(s) {
+  const pop = firstScore ? null : MatchLogic.footballPop(lastFootball, s);
+  lastFootball = s;
+  if (pop) showPop(pop);
+  const lines = MatchLogic.footballLines(s);
+  $("nameA").textContent = teamName(s, "A");
+  $("nameB").textContent = teamName(s, "B");
+  setNum("sA", s.scoreA);
+  setNum("sB", s.scoreB);
+  $("unit").textContent = "";
+  $("history").textContent = lines.history;
+  fillList($("fbGoalsA"), lines.goalsA);
+  fillList($("fbGoalsB"), lines.goalsB);
+  $("fbGoalsA").setAttribute("aria-label", "Goals " + teamName(s, "A"));
+  $("fbGoalsB").setAttribute("aria-label", "Goals " + teamName(s, "B"));
+  $("fbPeriod").textContent = lines.period || "";
+  $("fbPeriod").hidden = !lines.period;
+  $("fbBanner").textContent = lines.banner;
+  $("fbBanner").hidden = !lines.banner;
+  $("fbPenaltyTitle").textContent = lines.penalty;
+  $("fbPenalty").hidden = !lines.penalty;
+
+  const so = lines.shootout;
+  $("fbShootout").hidden = !so;
+  const rows = $("fbShootRows");
+  rows.textContent = "";
+  if (so) {
+    $("fbShootScore").textContent = so.score;
+    $("fbShootNote").textContent = so.note;
+    for (const r of so.rows) {
+      const row = document.createElement("div");
+      row.className = "fb-shoot-row";
+      const name = document.createElement("span");
+      name.className = "fb-shoot-name";
+      name.textContent = r.team;
+      const marks = document.createElement("span");
+      marks.className = "fb-marks";
+      marks.setAttribute("role", "img");
+      marks.setAttribute("aria-label", r.label);
+      for (const m of r.marks) {
+        const d = document.createElement("span");
+        d.className = "fb-mark " + (m === "scored" ? "scored" : m === "todo" ? "todo" : "missed");
+        marks.appendChild(d);
+      }
+      row.appendChild(name);
+      row.appendChild(marks);
+      rows.appendChild(row);
+    }
+  }
+
+  const list = $("fbEvents");
+  list.textContent = "";
+  for (const e of lines.events) {
+    const li = document.createElement("li");
+    if (e.card) {
+      const c = document.createElement("span");
+      c.className = "fb-card " + e.card;
+      c.setAttribute("aria-hidden", "true");
+      li.appendChild(c);
+    }
+    li.appendChild(document.createTextNode(e.text));
+    list.appendChild(li);
+  }
+  $("fbEventsTitle").hidden = lines.events.length === 0;
 }
 
 // place, time and competition

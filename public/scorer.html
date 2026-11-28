@@ -277,7 +277,7 @@
         <div id="fbOutcomes" class="fbThree"><button id="fbOut_scored" onclick="fbPick('outcome','scored')">SCORED</button><button id="fbOut_saved" onclick="fbPick('outcome','saved')">SAVED</button><button id="fbOut_missed" onclick="fbPick('outcome','missed')">MISSED</button></div>
         <div id="fbColors" class="kbTwo"><button id="fbColor_yellow" onclick="fbPick('color','yellow')">YELLOW</button><button id="fbColor_red" onclick="fbPick('color','red')">RED</button></div>
         <div class="kbQ" id="fbShirtQ">Shirt number</div>
-        <input id="fbShirt" inputmode="numeric" maxlength="2" placeholder="Shirt number, e.g. 9" oninput="updateFootballUI()">
+        <input id="fbShirt" inputmode="numeric" maxlength="3" placeholder="Shirt number, e.g. 9" oninput="updateFootballUI()">
         <input id="fbPlayerName" maxlength="20" placeholder="Name (optional)" oninput="updateFootballUI()">
         <div id="fbSummary"></div>
         <button id="fbSave" class="fbWide fbGo" onclick="fbSave()" disabled>SAVE</button>
@@ -785,11 +785,11 @@
     return "FULL TIME: LEVEL";
   }
 
-  // shirt number typed on the phone: a number 1-99, null = empty, NaN = wrong
+  // shirt number typed on the phone: a number 1-999, null = empty, NaN = wrong
   function fbShirtTyped() {
     const raw = String($("fbShirt").value).trim();
     if (!raw) return null;
-    if (!/^\d{1,2}$/.test(raw) || Number(raw) < 1) return NaN;
+    if (!/^\d{1,3}$/.test(raw) || Number(raw) < 1) return NaN;
     return Number(raw);
   }
   // the name typed: "" = none, null = not allowed
@@ -806,7 +806,7 @@
     const f = fbForm;
     const shirt = fbShirtTyped();
     const name = fbNameTyped();
-    if (Number.isNaN(shirt)) return { error: "Shirt number: 1 to 99" };
+    if (Number.isNaN(shirt)) return { error: "Shirt number: 1 to 999" };
     if (name === null) return { error: "Name: up to 20 letters, numbers, spaces and . ' -" };
     const player = shirt ? (name ? { shirt, name } : { shirt }) : {};
     if (name && !shirt) return { error: "Type the shirt number (the name is extra)" };
