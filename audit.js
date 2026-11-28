@@ -23,7 +23,31 @@ function ballText(data) {
   return t;
 }
 
-function actionText(e, names) {
+// kabaddi actions in words (same wording as the scorer page will use)
+function kabaddiText(e, names) {
+  const d = e.data && typeof e.data === "object" ? e.data : {};
+  const n = (t) => names[t] || t;
+  if (e.type === "raid") {
+    let t = d.caught ? "raider caught" : d.out > 0 ? d.out + " out" : d.bonus ? "" : "empty raid";
+    if (d.bonus) t += (t ? " + " : "") + "bonus";
+    return "Raid by " + n(d.team) + ": " + t;
+  }
+  if (e.type === "point" && e.value === 1) return "Technical point +1 for " + n(e.team);
+  if (e.type === "court") return "Players on court for " + n(d.team) + ": " + (d.change > 0 ? "+1" : "-1");
+  if (e.type === "break") {
+    if (d.kind === "timeout") return "Break: timeout " + n(d.team);
+    if (d.kind === "other") return "Break: " + d.text;
+    if (d.kind === "over") return "Break over";
+  }
+  if (e.type === "end_period" && (d.period === 1 || d.period === 2)) return "End Half " + d.period;
+  return null;                      // the same words as the other sports
+}
+
+function actionText(e, names, sport) {
+  if (sport === "kabaddi") {
+    const t = kabaddiText(e, names);
+    if (t) return t;
+  }
   if (e.type === "point" && Number.isInteger(e.value) && e.value < 0) {
     return e.value + " for " + (names[e.team] || e.team) + " (correction)";             // basketball: take points away
   }
@@ -71,7 +95,7 @@ function buildHistory(match, events, engine) {
         row.text = "UNDO (nothing to cancel)";
       }
     } else {
-      row.text = actionText(e, names);
+      row.text = actionText(e, names, match.sport);
       counted.push(row);
     }
 

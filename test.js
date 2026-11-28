@@ -1118,6 +1118,9 @@ const { FailureLimiter } = require("./rateLimit");
   assert.ok(bbRefusedEnds > 100, "the random test really tried old END QUARTER presses (" + bbRefusedEnds + ")");
 }
 
+// ======================= Kabaddi (AKFI: 2 halves, raids, all out, super tackle) =======================
+require("./test-kabaddi")();
+
 // ======================= Startup guard: JWT_SECRET =======================
 const { checkJwtSecret, DEV_SECRET } = require("./config");
 {
@@ -1361,6 +1364,21 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(hb2.rows[1].text, "End Quarter 1");
   assert.strictEqual(hb2.rows[0].text, "End Overtime 1");
 
+  // kabaddi: raids, technical point, court fix, breaks, halves in words (newest row first)
+  const raid = (team, out, bonus, caught) => ({ type: "raid", data: { team, out, bonus, caught } });
+  const hk = hist("kabaddi", [raid("A", 2, true, false), raid("B", 0, false, false), raid("B", 0, true, true),
+    { type: "point", team: "B", value: 1 }, { type: "point", team: "B", value: -1 }, { type: "court", data: { team: "A", change: -1 } },
+    { type: "break", data: { kind: "timeout", team: "B" } }, { type: "break", data: { kind: "other", text: "Rain delay" } },
+    { type: "break", data: { kind: "over" } }, { type: "end_period", data: { period: 1 } }, raid("A", 1, false, false)],
+    { config: { halfMinutes: 15, knockout: false } });
+  assert.deepStrictEqual(hk.rows.map((r) => r.text).reverse(), [
+    "Raid by CSE: 2 out + bonus", "Raid by ECE: empty raid", "Raid by ECE: raider caught + bonus",
+    "Technical point +1 for ECE", "-1 for ECE (correction)", "Players on court for CSE: -1",
+    "Break: timeout ECE", "Break: Rain delay", "Break over", "End Half 1", "Raid by CSE: 1 out"]);
+  assert.deepStrictEqual(hk.rows.map((r) => r.after).reverse(), [
+    "CSE 3-0 ECE (H1)", "CSE 3-0 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-2 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)",
+    "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (H1)", "CSE 4-1 ECE (half time)", "CSE 5-1 ECE (H2)"]);
+
   // table tennis: a point has no value
   const h5 =hist("table_tennis", [{ type: "point", team: "A" }]);
   assert.deepStrictEqual([h5.rows[0].text, h5.rows[0].after], ["+1 for CSE", "CSE 0-0 ECE (1-0 in this game)"]);
@@ -1558,6 +1576,22 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(parseMatch(bbBody({ category: "" })).category, "", "scripts may leave the category empty");
   for (const category of ["male_faculty", "female_faculty", "mix"]) {
     assert.match(problem(bbBody({ category })), /basketball is only for Boys and Girls/);
+  }
+  // kabaddi: only Boys and Girls; half minutes from category + stage; knockout from the stage (the admin cannot change them)
+  const kbBody = (o) => ({ sport: "kabaddi", teamA: "CSE", teamB: "ME", category: "boys", stage: "group", ...o });
+  assert.deepStrictEqual(parseMatch(kbBody({})).config, { halfMinutes: 15, knockout: false }, "boys group = 15 min, a draw is possible");
+  assert.deepStrictEqual(parseMatch(kbBody({ stage: "quarter_final" })).config, { halfMinutes: 15, knockout: true });
+  assert.deepStrictEqual(parseMatch(kbBody({ stage: "semi_final" })).config, { halfMinutes: 15, knockout: true });
+  assert.deepStrictEqual(parseMatch(kbBody({ stage: "final" })).config, { halfMinutes: 20, knockout: true });
+  assert.deepStrictEqual(parseMatch(kbBody({ category: "girls" })).config, { halfMinutes: 10, knockout: false });
+  assert.deepStrictEqual(parseMatch(kbBody({ category: "girls", stage: "semi_final" })).config, { halfMinutes: 10, knockout: true });
+  assert.deepStrictEqual(parseMatch(kbBody({ category: "girls", stage: "final" })).config, { halfMinutes: 15, knockout: true });
+  assert.deepStrictEqual(parseMatch(kbBody({ stage: "knockout" })).config, { halfMinutes: 15, knockout: true }, "old 'knockout' stage");
+  assert.deepStrictEqual(parseMatch(kbBody({ config: { halfMinutes: 3, knockout: true, hack: 1 } })).config,
+    { halfMinutes: 15, knockout: false }, "settings sent by the page are ignored");
+  assert.strictEqual(parseMatch(kbBody({ category: "" })).config.halfMinutes, 15, "scripts may leave the category empty: Boys numbers");
+  for (const category of ["male_faculty", "female_faculty", "mix"]) {
+    assert.match(problem(kbBody({ category })), /kabaddi is only for Boys and Girls/);
   }
   // bad values are refused
   assert.match(problem(crBody({ category: "staff" })), /category/);

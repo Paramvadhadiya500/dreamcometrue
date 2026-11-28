@@ -5,6 +5,7 @@ const engines = {
   cricket: require("./cricket"),
   volleyball: require("./volleyball"),
   basketball: require("./basketball"),
+  kabaddi: require("./kabaddi"),
 };
 
 function getEngine(sport) {

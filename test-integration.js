@@ -446,6 +446,36 @@ test("9b. basketball: 1/2/3 points, end_period is stored (migration 007), quarte
   assert.strictEqual(await rowCount("SELECT count(*) AS n FROM events WHERE match_id = $1 AND type = 'end_period'", [match]), 4);
 });
 
+test("9c. kabaddi: raid, court and break are stored (migration 008), only the cleaned data, all out, level group match = draw", async () => {
+  const match = "it-" + RUN + "-kb";
+  await pool.query("INSERT INTO matches (id, name, sport, config) VALUES ($1, 'Integration kb', 'kabaddi', $2)",
+    [match, JSON.stringify({ halfMinutes: 15, knockout: false })]);
+  await pool.query("INSERT INTO match_scorers (username, match_id) VALUES ('it_scorer1', $1)", [match]);
+  const s1 = await scorer("it_scorer1");
+  const raid = (team, out, bonus = false, caught = false) => ({ id: newId(), type: "raid", data: { team, out, bonus, caught, junk: "x" } });
+
+  let a = await act(s1, match, raid("A", 7));
+  assert.strictEqual(a.ok, true, "raid must be accepted by the database: " + JSON.stringify(a));
+  assert.deepStrictEqual([a.state.scoreA, a.state.onCourtB, a.state.lastRaid.allOut], [9, 7, true], "7 out + all out 2");
+  a = await act(s1, match, raid("B", 8));
+  assert.deepStrictEqual([a.ok, a.error], [false, "players out must be a whole number from 0 to 7"]);
+  a = await act(s1, match, { id: newId(), type: "court", data: { team: "B", change: -1 } });
+  assert.strictEqual(a.ok, true, "court must be accepted by the database: " + JSON.stringify(a));
+  a = await act(s1, match, { id: newId(), type: "break", data: { kind: "other", text: "Rain delay" } });
+  assert.strictEqual(a.ok, true, "break must be accepted by the database: " + JSON.stringify(a));
+  assert.deepStrictEqual(a.state.breakNow, { kind: "other", text: "Rain delay" });
+  const stored = await pool.query("SELECT type, team, value, data FROM events WHERE match_id = $1 ORDER BY seq", [match]);
+  assert.deepStrictEqual(stored.rows[0], { type: "raid", team: null, value: null, data: { team: "A", out: 7, bonus: false, caught: false } },
+    "the junk field is not stored");
+  for (let i = 0; i < 9; i++) await act(s1, match, { id: newId(), type: "point", team: "B", value: 1 });   // technical points: 9-9
+  a = await act(s1, match, { id: newId(), type: "end_period", data: { period: 1 } });
+  assert.deepStrictEqual([a.state.half, a.state.breakNow], [2, { kind: "half_time" }]);
+  a = await act(s1, match, { id: newId(), type: "end_period", data: { period: 1 } });
+  assert.deepStrictEqual([a.ok, a.error], [false, "Half 1 has already ended"], "a double press cannot skip half 2");
+  a = await act(s1, match, { id: newId(), type: "end_period", data: { period: 2 } });
+  assert.deepStrictEqual([a.state.status, a.state.winner, a.state.resultText], ["finished", "draw", "Draw 9-9"]);
+});
+
 test("10. SIGTERM (what Docker sends on stop/restart): the server closes cleanly and exits 0 within 3 s", async () => {
   if (process.platform === "win32") {
     console.log("     (skipped on Windows: it has no SIGTERM; GitHub and the Linux container run this case)");

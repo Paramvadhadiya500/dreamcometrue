@@ -6,6 +6,7 @@ const { getEngine } = require("./engines");
 const cricket = require("./engines/cricket");
 const volleyball = require("./engines/volleyball");
 const basketball = require("./engines/basketball");
+const kabaddi = require("./engines/kabaddi");
 const { buildHistory } = require("./audit");
 const { CATEGORIES, STAGES } = require("./categories");
 const { competitionOf } = require("./standings");
@@ -26,7 +27,12 @@ const BASKETBALL_CATEGORIES = ["boys", "girls"];
 // { group: 7, quarter_final: 7, semi_final: 10, final: 10, knockout: 7 }: the admin form shows it (same numbers as the server)
 const BASKETBALL_MINUTES = Object.fromEntries(Object.keys(STAGES).map((s) => [s, basketball.collegeQuarterMinutes(s)]));
 
-const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", simple: "sm" };
+// kabaddi: { boys: { group: 15, ..., final: 20 }, girls: { group: 10, ..., final: 15 } }: the admin form shows it
+const KABADDI_CATEGORIES = ["boys", "girls"];
+const KABADDI_MINUTES = Object.fromEntries(KABADDI_CATEGORIES.map((c) =>
+  [c, Object.fromEntries(Object.keys(STAGES).map((s) => [s, kabaddi.collegeHalfMinutes(c, s)]))]));
+
+const SPORT_PREFIX = { cricket: "cr", table_tennis: "tt", volleyball: "vb", basketball: "bb", kabaddi: "kb", simple: "sm" };
 
 class Problem extends Error {
   constructor(message, status = 400) {
@@ -68,6 +74,9 @@ function parseMatch(body) {
   }
   if (sport === "basketball" && category !== "" && !BASKETBALL_CATEGORIES.includes(category)) {
     throw new Problem("basketball is only for Boys and Girls");
+  }
+  if (sport === "kabaddi" && category !== "" && !KABADDI_CATEGORIES.includes(category)) {
+    throw new Problem("kabaddi is only for Boys and Girls");
   }
 
   const teamA = text(body.teamA, "Team A");
@@ -126,6 +135,10 @@ function parseMatch(body) {
     // college rule, not editable: 7 min quarters up to the quarter final, 10 min in the semi final and final.
     // Only shown on the pages (no clock). Anything the page sends in config is ignored.
     config = { quarterMinutes: basketball.collegeQuarterMinutes(stage), overtimeMinutes: basketball.normalizeConfig({}).overtimeMinutes };
+  } else if (sport === "kabaddi") {
+    // college rule, not editable: half minutes from category + stage (display only, no clock);
+    // knockout from the stage: a level knockout match needs a tie-break winner, a level group match is a draw.
+    config = { halfMinutes: kabaddi.collegeHalfMinutes(category, stage), knockout: kabaddi.isKnockoutStage(stage) };
   }
 
   let scorers;
@@ -228,7 +241,8 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
         bestOf: m.best_of,
         config: m.sport === "cricket" ? cricket.normalizeConfig(m.config)
               : m.sport === "volleyball" ? volleyball.normalizeConfig(m.config)
-              : m.sport === "basketball" ? basketball.normalizeConfig(m.config) : {},
+              : m.sport === "basketball" ? basketball.normalizeConfig(m.config)
+              : m.sport === "kabaddi" ? kabaddi.normalizeConfig(m.config) : {},
         teamA: m.team_a,
         teamB: m.team_b,
         competition: m.competition,
@@ -250,6 +264,7 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
       stages: STAGES,
       collegeOvers: OVERS_TABLE,                 // the admin form fills the overs from this (same numbers as the server)
       basketballMinutes: BASKETBALL_MINUTES,     // the admin form shows the quarter length from this
+      kabaddiMinutes: KABADDI_MINUTES,           // the admin form shows the half length from this
     });
   }));
 
@@ -306,7 +321,9 @@ function createAdminRouter({ pool, requireAdmin, afterMatchChange }) {
             old.sport === m.sport &&
             old.best_of === m.bestOf &&
             (m.sport !== "cricket" || JSON.stringify(cricket.normalizeConfig(old.config)) === JSON.stringify(m.config)) &&
-            (m.sport !== "volleyball" || JSON.stringify(volleyball.normalizeConfig(old.config)) === JSON.stringify(m.config));
+            (m.sport !== "volleyball" || JSON.stringify(volleyball.normalizeConfig(old.config)) === JSON.stringify(m.config)) &&
+            // kabaddi: the minutes may change (shown only), but group <-> knockout may not: it decides draw or tie-break
+            (m.sport !== "kabaddi" || kabaddi.normalizeConfig(old.config).knockout === m.config.knockout);
           if (!sameSettings) throw new Problem("scoring has started, so the sport and its settings can no longer be changed", 409);
         }
 

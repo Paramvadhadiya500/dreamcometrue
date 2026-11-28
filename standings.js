@@ -9,7 +9,7 @@
 const { categoryLabel } = require("./categories");
 
 const POINTS = { win: 2, draw: 1, loss: 0 };
-const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", basketball: "Basketball", simple: "Other" };
+const SPORT_LABELS = { cricket: "Cricket", table_tennis: "Table Tennis", volleyball: "Volleyball", basketball: "Basketball", kabaddi: "Kabaddi", simple: "Other" };
 
 const norm = (name) => String(name === undefined || name === null ? "" : name).trim().replace(/\s+/g, " ");
 const keyOf = (name) => norm(name).toLowerCase();
