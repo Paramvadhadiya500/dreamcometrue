@@ -24,6 +24,9 @@
         (s.isDeciding ? "Deciding set" : "Set " + s.currentSet) + ": " + s.pointsA + " to " + s.pointsB + ".";
     } else if (s.sport === "basketball") {
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + s.periodName + ".");
+    } else if (s.sport === "kabaddi") {
+      var banner = kabaddiBanner(s);
+      text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + "." + (s.status === "finished" ? "" : " " + (banner || s.halfName) + ".");
     } else {
       text = A + " " + s.scoreA + ", " + B + " " + s.scoreB + ".";
     }
@@ -92,8 +95,101 @@
     };
   }
 
+  // Kabaddi: the banner over the score ("HALF TIME", "TIMEOUT: CSE", "BREAK: Rain delay", the tie-break; "" = none)
+  function kabaddiBanner(s) {
+    var b = s.breakNow;
+    if (s.needsTiebreak) return "Level after 2 halves: tie-break";
+    if (!b) return "";
+    if (b.kind === "half_time") return "HALF TIME";
+    if (b.kind === "timeout") return "TIMEOUT: " + teamName(s, b.team);
+    if (b.kind === "other") return "BREAK: " + b.text;
+    return "";
+  }
+
+  var KB_MOMENTS = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "Technical point" };
+  function dots(n, max) {
+    var t = "";
+    for (var i = 0; i < max; i++) t += i < n ? "●" : "○";
+    return t;
+  }
+
+  // "CSE +3 (2 out + bonus)"; an old saved state without points: just "CSE"
+  function momentWho(s, h) {
+    var t = teamName(s, h.team);
+    if (typeof h.points !== "number") return t;
+    t += " +" + h.points;
+    if (h.kind === "super_raid" && typeof h.out === "number") {
+      var how = [];
+      if (h.out > 0) how.push(h.out + " out");
+      if (h.bonus) how.push("bonus");
+      t += " (" + how.join(" + ") + ")";
+    }
+    return t;
+  }
+
+  // "ECE: 3 on court - SUPER TACKLE on!": a tackle by a team with 3 or fewer is worth 2; 1 left = close to ALL OUT
+  function dangerLines(s) {
+    if (s.status === "finished" || s.needsTiebreak) return [];
+    var out = [];
+    ["A", "B"].forEach(function (t) {
+      var n = t === "A" ? s.onCourtA : s.onCourtB;
+      if (n === 1) out.push(teamName(s, t) + ": last player on court - ALL OUT danger, SUPER TACKLE on!");
+      else if (n >= 2 && n <= 3) out.push(teamName(s, t) + ": " + n + " on court - SUPER TACKLE on!");
+    });
+    return out;
+  }
+
+  // points by type: [label, A, B] rows; "Corrections" only when there is one; none before the first point
+  function pointsTable(s) {
+    var b = s.pointsBy;
+    if (!b || !b.A || !b.B || s.scoreA + s.scoreB === 0) return [];
+    var rows = [["Raid", b.A.raid, b.B.raid], ["Tackle", b.A.tackle, b.B.tackle], ["All out", b.A.allOut, b.B.allOut],
+      ["Technical", b.A.technical, b.B.technical]];
+    if (b.A.correction || b.B.correction) rows.push(["Corrections", b.A.correction, b.B.correction]);
+    return rows;
+  }
+
+  // Kabaddi board: the half now ("Half 1 (15 min)", null when finished or at the tie-break), finished halves
+  // ("H1 12-9"), the banner, players on court (number + dots), the danger line, points by type,
+  // the big moments with their points (newest first, at most 6).
+  function kabaddiLines(s) {
+    var max = s.players || 7;
+    var moments = (s.highlights || []).slice(0, 6).map(function (h) {
+      return (KB_MOMENTS[h.kind] || h.kind) + " · " + momentWho(s, h) + " · H" + h.half + " · " + h.scoreA + "-" + h.scoreB;
+    });
+    return {
+      current: s.status === "finished" || s.needsTiebreak ? null : s.halfName + " (" + s.halfMinutes + " min)",
+      history: (s.halves || []).map(function (h, i) { return "H" + (i + 1) + " " + h[0] + "-" + h[1]; }).join(", "),
+      banner: kabaddiBanner(s),
+      courtA: s.onCourtA, courtB: s.onCourtB,
+      dotsA: dots(s.onCourtA, max), dotsB: dots(s.onCourtB, max),
+      danger: dangerLines(s),
+      table: pointsTable(s),
+      moments: moments,
+    };
+  }
+
+  // The big pop-up over the score: the moments that are NEW in "next" compared with "prev", e.g.
+  // "SUPER RAID + ALL OUT! CSE +7". null = nothing to show: the page just opened (prev null), the same state
+  // came again (reconnect), an UNDO took a moment away, or a normal raid.
+  var KB_POP = { super_raid: "SUPER RAID", super_tackle: "SUPER TACKLE", all_out: "ALL OUT", technical: "TECHNICAL POINT" };
+  function momentKey(h) { return [h.kind, h.team, h.half, h.scoreA, h.scoreB].join("|"); }
+  function kabaddiPop(prev, next) {
+    if (!prev || !next || next.sport !== "kabaddi") return null;
+    var seen = {};
+    (prev.highlights || []).forEach(function (h) { seen[momentKey(h)] = true; });
+    var fresh = [];
+    var list = next.highlights || [];
+    for (var i = 0; i < list.length && !seen[momentKey(list[i])]; i++) fresh.unshift(list[i]);   // oldest first
+    if (fresh.length === 0) return null;
+    var points = 0;
+    fresh.forEach(function (h) { points += typeof h.points === "number" ? h.points : 0; });
+    var last = fresh[fresh.length - 1];
+    return fresh.map(function (h) { return KB_POP[h.kind] || h.kind; }).join(" + ") + "! " + teamName(next, last.team) + (points ? " +" + points : "");
+  }
+
   var api = { scoreSentence: scoreSentence, createAnnouncer: createAnnouncer, connectionText: connectionText, tossLine: tossLine,
-    basketballLines: basketballLines };
+    basketballLines: basketballLines, kabaddiLines: kabaddiLines, kabaddiPop: kabaddiPop };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.MatchLogic = api;
 })(this);

@@ -37,15 +37,15 @@ admin.js             admin API router (/api/admin/*): matches, scorers
 standings.js         pure points-table logic (win 2, draw/tie/no result 1, loss 0; NRR for cricket)
 db.js                Postgres pool (needs DATABASE_URL)
 engine.js            table tennis rules + effectivePoints() (undo handling)
-engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball
-engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js   (each also has result(state) and headline(state, names))
+engines/index.js     registry: getEngine(sport)  ->  table_tennis | simple | cricket | volleyball | basketball | kabaddi
+engines/tableTennis.js, simple.js, cricket.js, volleyball.js, basketball.js, kabaddi.js   (each also has result(state) and headline(state, names))
 migrate.js           applies migrations/*.sql in order, records them in schema_migrations
-migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql
+migrations/001_init.sql, 002_add_sport.sql, 003_cricket.sql, 004_admin_home.sql, 005_category_and_rounds.sql, 006_toss.sql, 007_basketball.sql, 008_kabaddi.sql
 categories.js        names of the 5 categories (boys, girls, male_faculty, female_faculty, mix) and stages
 seed.js              creates demo users and 2 table tennis matches (DEMO passwords: do not use on the real server)
                      (matches are now normally created in the admin panel; add-match.js still works)
 add-user.js          node add-user.js <name> <admin|scorer> <password 10+ chars>   (create or reset)
-add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball|basketball [--overs --players --first --freehit --bestof --scorer]
+add-match.js         node add-match.js --id .. --name ".." --sport cricket|simple|table_tennis|volleyball|basketball|kabaddi [--overs --players --first --freehit --bestof --scorer]
 test.js              unit tests (all rules, a 400-game random cricket test, a 400-game random volleyball test)
 loadtest.js          load test (viewers); scorer login from SCORER_USER / SCORER_PASS
 loadtest-real.js     realistic traffic simulator (students arrive, browse, watch live, switch match, drop and reconnect; scorers; probes); see LESSON_13.md
@@ -113,6 +113,29 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
   State: scoreA/B, currentA/B, period, periodName, isOvertime, periodMinutes, periods ([a,b] per finished period), winner, ended, resultText.
   Rules: 4 quarters; level after quarter 4 or an overtime = another overtime; no draws. Points table: forA/forB = points (win 2, loss 0).
   NOT supported: game clock, fouls, timeouts, player names, FIBA 20-0 forfeit.
+- kabaddi (AKFI rules checked on kabaddi.info + the user's choices; Boys and Girls only; settings in matches.config: halfMinutes, knockout,
+  always set by admin.js: halves Boys 15 / Girls 10 min, FINAL Boys 20 / Girls 15 (display only, no clock); knockout = stage is not group;
+  group <-> knockout cannot change after scoring starts):
+  actions `raid{data:{team A|B (raiding), out 0-7 (defenders out), bonus, caught}}` (safe: +out (+1 bonus), one own player back per defender out,
+  not for the bonus; caught: defenders +1, or +2 SUPER TACKLE when they had 3 or fewer on court, one defender back, out must be 0, a bonus still counts;
+  bonus only with 6+ defenders; a team with 0 left = ALL OUT: +2 for the other team, all 7 back; max 10 points in one raid),
+  `point{team, value +1 technical | -1 correction}`, `court{data:{team, change +1|-1}}` (fix players on court, 1-7, no points),
+  `break{data:{kind timeout+team | other+text (max 40, letters/numbers/. , ' ! ? : ( ) / -) | over}}` (shown only), `end_period{data:{period 1|2}}`
+  (required; refused if that half ended), `finish{data:{winner}}` (walkover, or the tie-break winner), `undo`. The team of raid/court/break is in data
+  (the server stores `team` only for point events).
+  After half 2: higher score wins; level group = draw ("Draw 9-9", 1 point each); level knockout = needsTiebreak, only `finish` allowed
+  ("Team B won on tie-break (9-9)"). Players on court carry over at half time.
+  Scorer page: raid form (who raided, raider safe/OUT, defenders out 0-7, bonus) + a summary line + SAVE RAID (no confirm, the form resets);
+  impossible choices closed from the last state, but NOT while entries of the match wait on the phone (the server checks);
+  END HALF asks first and sends the half number; timeouts ask from the 3rd in a half; full team names on every button.
+  State: scoreA/B, currentA/B, half, halfName, halfMinutes, halves, onCourtA/B, players (7), timeoutsA/B (this half), breakNow
+  ({kind half_time|timeout|other}), lastRaid, highlights (newest 10, each {kind, team, points, half, scoreA, scoreB}; super_raid also out, bonus:
+  super_raid (3+ points, shown only) | super_tackle | all_out | technical), pointsBy {A|B: {raid, tackle, allOut, technical, correction}} (adds up
+  to the score), needsTiebreak, knockout, ended (normal|draw|tiebreak|walkover), resultText.
+  Match page: big pop-up for NEW moments (6 s; MatchLogic.kabaddiPop), banner, players on court (CSS dots), danger line (3 or fewer on court),
+  "Points by type" table, big moments with points (6).
+  NOT supported: clock, player names, cards (use the court fix), substitutions, tie-break raids (only the winner), do-or-die raids.
+  Not in the AKFI text (user decided): super tackle 2 points; bonus kept when the raider is caught later; a technical point brings nobody back.
 - State of every sport also has: sport, matchId, name, version, status ("live"|"finished"), winner.
 
 ## 7. Database (PostgreSQL, database `livescore`, user `livescore`)
@@ -120,7 +143,7 @@ Dockerfile, docker-compose.yml, Caddyfile, .dockerignore, .env.example, DEPLOY.m
 - matches(id PK, name, best_of, sport, config jsonb, team_a, team_b, competition, category (''|boys|girls|male_faculty|female_faculty|mix), stage group|quarter_final|semi_final|final|knockout (old), venue, start_time timestamptz, created_at)
 - match_scorers(username, match_id)  PK(both)
 - events(seq bigserial PK, id unique, match_id, type, team, value, data jsonb, by_user, created_at)
-  type in: point, undo, finish, ball, end_innings, toss, end_period
+  type in: point, undo, finish, ball, end_innings, toss, end_period, raid, court, break
 - schema_migrations(name PK, applied_at)
 Rules: NEVER edit a migration that was already applied. Add a new numbered file (004_...sql). Write migrations so they can run twice (IF NOT EXISTS).
 
@@ -170,7 +193,7 @@ More in DEPLOY.md. Never run `docker compose down -v` (deletes the database).
 
 ## 11. Status
 Done: Lessons 1-13: Socket.IO rooms, event scoring, scorer queue with retry, login/roles, PostgreSQL, Redis cache + adapter + load test,
-AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages), basketball engine (quarters, overtime, admin form, scorer and match pages),
+AWS EC2 deploy (Docker, Caddy, HTTP only), backups/runbook, multi-sport (simple + table tennis), cricket engine and cricket scorer screen, volleyball engine (best of 3/5, walkover, admin form, scorer and match pages), basketball engine (quarters, overtime, admin form, scorer and match pages), kabaddi engine (raids, all out, super tackle, breaks, admin form, scorer and match pages),
 admin panel (matches, scorers, schedule, team names), student home page (live, schedule, results, points table), match page,
 HTTPS settings (IP address or domain certificate through Caddy), login protection, request limits, weak-password finder, automatic backups, security check script.
 Load test on AWS (500 viewers): median about 70-80 ms; one round had a worst case of about 2.5 s (not explained yet).

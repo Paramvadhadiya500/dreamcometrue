@@ -129,15 +129,20 @@ socket.on("score:update", (s) => {
   const isVB = s.sport === "volleyball";
   const isCR = s.sport === "cricket";
   const isBB = s.sport === "basketball";
+  const isKB = s.sport === "kabaddi";
   $("duel").hidden = isCR;
-  $("current").hidden = !(isTT || isVB || (isBB && !finished));
-  $("history").hidden = !(isTT || isVB || isBB);
+  $("current").hidden = !(isTT || isVB || (isBB && !finished) || (isKB && !finished && !s.needsTiebreak));
+  $("history").hidden = !(isTT || isVB || isBB || isKB);
   $("cricket").hidden = !isCR;
+  $("kabaddi").hidden = !isKB;
+  if (!isKB) $("kbPop").hidden = true;
 
   if (isCR) {
     showCricket(s);
   } else if (isBB) {
     showBasketball(s);
+  } else if (isKB) {
+    showKabaddi(s);
   } else {
     showDuel(s, isTT, isVB);
   }
@@ -180,6 +185,90 @@ function showBasketball(s) {
   setNum("pA", s.currentA);
   setNum("pB", s.currentB);
   $("history").textContent = lines.history;
+}
+
+// kabaddi: total score big, the half now (with its points), finished halves, a break banner,
+// the players on court of each team, a danger line, points by type, and the big moments
+// (super raid, super tackle, all out, technical point) with a big pop-up when one happens
+let lastKabaddi = null;                  // the state shown before, to find moments that are NEW
+let popTimer = null;
+function showPop(text) {
+  const e = $("kbPop");
+  e.textContent = text;
+  e.hidden = false;
+  e.classList.remove("kb-pop-in");
+  void e.offsetWidth;                    // play the animation again for the next moment
+  e.classList.add("kb-pop-in");
+  clearTimeout(popTimer);
+  popTimer = setTimeout(() => { e.hidden = true; }, 6000);
+}
+
+// "●●●○○○○" -> 7 round marks drawn by CSS (the two text symbols have different sizes in many phone fonts)
+function showDots(box, text) {
+  box.textContent = "";
+  for (const ch of text) {
+    const d = document.createElement("span");
+    d.className = "kb-dot" + (ch === "●" ? " on" : "");
+    box.appendChild(d);
+  }
+}
+
+function showKabaddi(s) {
+  // no pop-up for moments that were already there when the page opened
+  const pop = firstScore ? null : MatchLogic.kabaddiPop(lastKabaddi, s);
+  lastKabaddi = s;
+  if (pop) showPop(pop);
+  $("nameA").textContent = teamName(s, "A");
+  $("nameB").textContent = teamName(s, "B");
+  setNum("sA", s.scoreA);
+  setNum("sB", s.scoreB);
+  $("unit").textContent = "";
+  const lines = MatchLogic.kabaddiLines(s);
+  $("curLabel").textContent = lines.current || "";
+  setNum("pA", s.currentA);
+  setNum("pB", s.currentB);
+  $("history").textContent = lines.history;
+  $("kbBanner").textContent = lines.banner;
+  $("kbBanner").hidden = !lines.banner;
+  $("kbCourtA").textContent = lines.courtA;
+  $("kbCourtB").textContent = lines.courtB;
+  showDots($("kbDotsA"), lines.dotsA);
+  showDots($("kbDotsB"), lines.dotsB);
+  const list = $("kbMoments");
+  list.textContent = "";
+  for (const m of lines.moments) {
+    const li = document.createElement("li");
+    li.textContent = m;                    // text only: names typed by the admin can never become HTML
+    list.appendChild(li);
+  }
+  $("kbMomentsTitle").hidden = lines.moments.length === 0;
+
+  const danger = $("kbDanger");
+  danger.textContent = "";
+  for (const d of lines.danger) {
+    const p = document.createElement("p");
+    p.textContent = d;
+    danger.appendChild(p);
+  }
+
+  $("kbTable").hidden = lines.table.length === 0;
+  $("kbTableA").textContent = teamName(s, "A");
+  $("kbTableB").textContent = teamName(s, "B");
+  const body = $("kbTableBody");
+  body.textContent = "";
+  for (const [label, a, b] of lines.table) {
+    const tr = document.createElement("tr");
+    const th = document.createElement("th");
+    th.scope = "row";
+    th.textContent = label;
+    tr.appendChild(th);
+    for (const v of [a, b]) {
+      const td = document.createElement("td");
+      td.textContent = v;
+      tr.appendChild(td);
+    }
+    body.appendChild(tr);
+  }
 }
 
 // place, time and competition

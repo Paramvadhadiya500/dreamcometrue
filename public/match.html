@@ -24,6 +24,8 @@
 
 <section class="board" id="board" aria-label="Score" hidden>
   <p id="status" class="pill"></p>
+  <!-- kabaddi: SUPER RAID / SUPER TACKLE / ALL OUT / TECHNICAL POINT, big for 6 seconds when it happens -->
+  <p id="kbPop" class="kb-pop" hidden></p>
 
   <!-- simple sport, table tennis, volleyball, basketball: names left and right, the big numbers in the middle -->
   <div class="duel" id="duel" hidden>
@@ -36,6 +38,24 @@
   <!-- table tennis / volleyball / basketball: the game, set or quarter being played now, then the finished ones -->
   <p class="current" id="current" hidden><span id="curLabel"></span>: <span class="nums"><span id="pA">0</span> - <span id="pB">0</span></span></p>
   <p class="small" id="history"></p>
+
+  <!-- kabaddi: a break banner, the players on court of each team, the big moments (not every raid) -->
+  <div id="kabaddi" hidden>
+    <p id="kbBanner" class="kb-banner" hidden></p>
+    <div class="kb-court">
+      <span class="kb-side a"><span id="kbDotsA" class="kb-dots" aria-hidden="true"></span> <b id="kbCourtA"></b></span>
+      <span class="kb-label">on court</span>
+      <span class="kb-side b"><b id="kbCourtB"></b> <span id="kbDotsB" class="kb-dots" aria-hidden="true"></span></span>
+    </div>
+    <div id="kbDanger" class="kb-danger"></div>
+    <table id="kbTable" class="kb-table" hidden>
+      <caption>Points by type</caption>
+      <thead><tr><th scope="col">Type</th><th scope="col" id="kbTableA"></th><th scope="col" id="kbTableB"></th></tr></thead>
+      <tbody id="kbTableBody"></tbody>
+    </table>
+    <h2 id="kbMomentsTitle" class="kb-title" hidden>Big moments</h2>
+    <ol id="kbMoments" class="kb-moments"></ol>
+  </div>
 
   <div id="cricket" hidden>
     <p id="crToss" class="small"></p>

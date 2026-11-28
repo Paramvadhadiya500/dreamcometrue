@@ -1477,6 +1477,68 @@ const { createQueue } = require("./public/queue");
   assert.strictEqual(scoreSentence(bbDone), "Match finished. Team B won 5-2 (after overtime). CSE 2, ECE 5.");
   assert.deepStrictEqual(basketballLines(bbDone), { current: null, history: "Q1 2-2, Q2 0-0, Q3 0-0, Q4 0-0, OT1 0-3" });
 
+  // kabaddi: the half now, the break banner, players on court (number + dots), the big moments (newest first, at most 6)
+  const { kabaddiLines } = require("./public/js/match-logic");
+  const kbCfg = { config: { halfMinutes: 15, knockout: false } };
+  const kbKO = { config: { halfMinutes: 20, knockout: true } };
+  const raid = (team, out, bonus = false, caught = false) => ({ type: "raid", data: { team, out, bonus, caught } });
+  const H = (n) => ({ type: "end_period", data: { period: n } });
+  const kb1 = st("kabaddi", [raid("A", 3), raid("B", 0, false, true)], kbCfg);   // CSE 3 out, then ECE's raider caught
+  assert.strictEqual(scoreSentence(kb1), "CSE 4, ECE 0. Half 1.");
+  assert.deepStrictEqual(kabaddiLines(kb1), { current: "Half 1 (15 min)", history: "", banner: "",
+    courtA: 7, courtB: 3, dotsA: "●●●●●●●", dotsB: "●●●○○○○",
+    danger: ["ECE: 3 on court - SUPER TACKLE on!"],
+    table: [["Raid", 3, 0], ["Tackle", 1, 0], ["All out", 0, 0], ["Technical", 0, 0]],
+    moments: ["SUPER RAID · CSE +3 (3 out) · H1 · 3-0"] });
+  const kbHT = st("kabaddi", [raid("A", 3), H(1)], kbCfg);
+  assert.strictEqual(scoreSentence(kbHT), "CSE 3, ECE 0. HALF TIME.");
+  assert.deepStrictEqual([kabaddiLines(kbHT).current, kabaddiLines(kbHT).history, kabaddiLines(kbHT).banner], ["Half 2 (15 min)", "H1 3-0", "HALF TIME"]);
+  assert.strictEqual(kabaddiLines(st("kabaddi", [{ type: "break", data: { kind: "timeout", team: "B" } }], kbCfg)).banner, "TIMEOUT: ECE");
+  assert.strictEqual(kabaddiLines(st("kabaddi", [{ type: "break", data: { kind: "other", text: "Rain delay" } }], kbCfg)).banner, "BREAK: Rain delay");
+  const kbLevel = [raid("A", 1), raid("B", 1), H(1), H(2)];
+  const kbTie = st("kabaddi", kbLevel, kbKO);
+  assert.strictEqual(scoreSentence(kbTie), "CSE 1, ECE 1. Level after 2 halves: tie-break.");
+  assert.deepStrictEqual([kabaddiLines(kbTie).current, kabaddiLines(kbTie).history, kabaddiLines(kbTie).banner],
+    [null, "H1 1-1, H2 0-0", "Level after 2 halves: tie-break"]);
+  const kbDraw = st("kabaddi", kbLevel, kbCfg);
+  assert.strictEqual(scoreSentence(kbDraw), "Match finished. Draw 1-1. CSE 1, ECE 1.");
+  assert.deepStrictEqual([kabaddiLines(kbDraw).current, kabaddiLines(kbDraw).banner], [null, ""]);
+  const kbMany = kabaddiLines(st("kabaddi", Array(8).fill(p("A", 1)), kbCfg));
+  assert.strictEqual(kbMany.moments.length, 6, "at most 6 moments");
+  assert.strictEqual(kbMany.moments[0], "Technical point · CSE +1 · H1 · 8-0", "newest first");
+  assert.deepStrictEqual(kbMany.danger, [], "7 on court each: no danger line");
+  assert.deepStrictEqual(kabaddiLines({ ...kb1, teamA: "", highlights: [{ kind: "all_out", team: "A", half: 2, scoreA: 9, scoreB: 4 }] }).moments,
+    ["ALL OUT · Team A · H2 · 9-4"], "an old saved state without points still shows");
+  // moments with their points
+  const kbBig = st("kabaddi", [raid("A", 2, true), raid("A", 5)], kbCfg);                    // 2 out + bonus, then 5 out = ALL OUT
+  assert.deepStrictEqual(kabaddiLines(kbBig).moments,
+    ["ALL OUT · CSE +2 · H1 · 10-0", "SUPER RAID · CSE +5 (5 out) · H1 · 10-0", "SUPER RAID · CSE +3 (2 out + bonus) · H1 · 3-0"]);
+  const kbST = st("kabaddi", [raid("A", 4), raid("A", 0, false, true)], kbCfg);              // ECE has 3: super tackle
+  assert.strictEqual(kabaddiLines(kbST).moments[0], "SUPER TACKLE · ECE +2 · H1 · 4-2");
+  // danger line: 3 or fewer on court = a tackle by them is a SUPER TACKLE; 1 left = ALL OUT danger
+  assert.deepStrictEqual(kabaddiLines(st("kabaddi", [raid("A", 6), ...Array(5).fill({ type: "court", data: { team: "A", change: -1 } })], kbCfg)).danger,
+    ["CSE: 2 on court - SUPER TACKLE on!", "ECE: last player on court - ALL OUT danger, SUPER TACKLE on!"]);
+  assert.deepStrictEqual(kabaddiLines({ ...kbHT, status: "finished" }).danger, [], "no danger line after the match");
+  assert.deepStrictEqual(kabaddiLines(kbTie).danger, [], "no danger line at the tie-break");
+  // points table: corrections row only when there is one; no table before the first point or for an old saved state
+  assert.deepStrictEqual(kabaddiLines(st("kabaddi", [p("A", 1), p("A", -1), raid("B", 7)], kbCfg)).table,
+    [["Raid", 0, 7], ["Tackle", 0, 0], ["All out", 0, 2], ["Technical", 1, 0], ["Corrections", -1, 0]]);
+  assert.deepStrictEqual(kabaddiLines(st("kabaddi", [], kbCfg)).table, []);
+  assert.deepStrictEqual(kabaddiLines({ ...kb1, pointsBy: undefined }).table, []);
+
+  // the big pop-up: only for moments that are NEW since the last state (not on opening, not resent, not after UNDO)
+  const { kabaddiPop } = require("./public/js/match-logic");
+  const kb0 = st("kabaddi", [], kbCfg);
+  assert.strictEqual(kabaddiPop(null, kbBig), null, "page just opened: no pop-up for old moments");
+  assert.strictEqual(kabaddiPop(kb0, st("kabaddi", [raid("A", 2, true)], kbCfg)), "SUPER RAID! CSE +3");
+  assert.strictEqual(kabaddiPop(st("kabaddi", [raid("A", 2, true)], kbCfg), kbBig), "SUPER RAID + ALL OUT! CSE +7", "two moments in one raid");
+  assert.strictEqual(kabaddiPop(st("kabaddi", [raid("A", 4)], kbCfg), kbST), "SUPER TACKLE! ECE +2");
+  assert.strictEqual(kabaddiPop(kbBig, kbBig), null, "the same state again (reconnect): nothing");
+  assert.strictEqual(kabaddiPop(kbBig, st("kabaddi", [raid("A", 2, true)], kbCfg)), null, "UNDO: nothing");
+  assert.strictEqual(kabaddiPop(kb0, st("kabaddi", [p("B", 1)], kbCfg)), "TECHNICAL POINT! ECE +1");
+  assert.strictEqual(kabaddiPop(kb0, st("kabaddi", [raid("A", 2)], kbCfg)), null, "a normal raid: no pop-up");
+  assert.strictEqual(kabaddiPop(kb0, { ...kb0, sport: "basketball" }), null);
+
   // the toss on the match page
   const { tossLine } = require("./public/js/match-logic");
   const tossB = { type: "toss", data: { winner: "B", choice: "bowl" } };
